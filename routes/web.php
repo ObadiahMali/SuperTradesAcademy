@@ -3,14 +3,18 @@
 use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\ProfileController;
 
-// Secretary Controllers
+/*
+ * Secretary Controllers
+ */
 use App\Http\Controllers\Secretary\DashboardController as SecretaryDashboardController;
 use App\Http\Controllers\Secretary\StudentController;
 use App\Http\Controllers\Secretary\IntakeController;
 use App\Http\Controllers\Secretary\PaymentController;
 use App\Http\Controllers\Secretary\ExpenseController;
 
-// Administrator Controllers
+/*
+ * Administrator Controllers
+ */
 use App\Http\Controllers\Admin\AdminDashboardController;
 use App\Http\Controllers\Admin\EmployeeController;
 use App\Http\Controllers\Admin\ReportController;
@@ -20,7 +24,6 @@ use App\Http\Controllers\Admin\ReportController;
 | Public Routes
 |--------------------------------------------------------------------------
 */
-
 Route::get('/', function () {
     return view('welcome');
 });
@@ -29,30 +32,21 @@ Route::get('/', function () {
 |--------------------------------------------------------------------------
 | Role-Redirect Dashboard
 |--------------------------------------------------------------------------
-|
-| Redirect users to the appropriate dashboard based on role.
-|
 */
-
 Route::get('/dashboard', function () {
-
     if (! auth()->check()) {
         return redirect()->route('login');
     }
 
-    // Redirect Administrator → admin.dashboard
     if (auth()->user()->hasRole('administrator')) {
         return redirect()->route('admin.dashboard');
     }
 
-    // Redirect Secretary → secretary.dashboard
     if (auth()->user()->hasRole('secretary')) {
         return redirect()->route('secretary.dashboard');
     }
 
-    // If user has no valid role
     abort(403, 'No dashboard available for your role.');
-
 })->middleware(['auth'])->name('dashboard');
 
 /*
@@ -60,7 +54,6 @@ Route::get('/dashboard', function () {
 | Profile (Laravel Breeze)
 |--------------------------------------------------------------------------
 */
-
 Route::middleware('auth')->group(function () {
     Route::get('/profile', [ProfileController::class, 'edit'])->name('profile.edit');
     Route::patch('/profile', [ProfileController::class, 'update'])->name('profile.update');
@@ -71,12 +64,7 @@ Route::middleware('auth')->group(function () {
 |--------------------------------------------------------------------------
 | Secretary Routes
 |--------------------------------------------------------------------------
-|
-| Consolidated secretary group. All secretary routes are declared once here,
-| including resource controllers and extra action routes (receipts, toggle).
-|
 */
-
 Route::prefix('secretary')
     ->name('secretary.')
     ->middleware(['auth'])
@@ -91,16 +79,25 @@ Route::prefix('secretary')
         Route::resource('payments', PaymentController::class);
         Route::resource('expenses', ExpenseController::class);
 
-        // Extra action routes that complement the resources
+        // Extra action routes
         Route::patch('expenses/{expense}/toggle-paid', [ExpenseController::class, 'togglePaid'])
             ->name('expenses.togglePaid');
 
-        // Payment receipt routes (HTML and PDF)
-        Route::get('payments/{payment}/receipt', [PaymentController::class, 'receipt'])
-            ->name('payments.receipt');
+        // Payment receipt routes
+        // - payment-specific receipt (accepts Payment $payment)
+        Route::get('payments/{payment}/receipt', [PaymentController::class, 'receiptForPayment'])
+            ->name('payments.receipt.payment');
 
         Route::get('payments/{payment}/receipt/pdf', [PaymentController::class, 'receiptPdf'])
-            ->name('payments.receiptPdf');
+            ->name('payments.receipt.pdf');
+
+        // Student receipt (accepts Student $student)
+        Route::get('students/{student}/receipt', [PaymentController::class, 'receipt'])
+            ->name('students.receipt');
+
+        // Verify email
+        Route::get('students/verify-email', [StudentController::class, 'verifyEmail'])
+            ->name('students.verifyEmail');
     });
 
 /*
@@ -108,27 +105,32 @@ Route::prefix('secretary')
 | Administrator Routes
 |--------------------------------------------------------------------------
 |
-| Admin routes grouped under /admin with name prefix admin.
-|
+| Register explicit admin report routes first to avoid being captured by
+| resource/wildcard routes.
 */
-
 Route::prefix('admin')
     ->name('admin.')
     ->middleware(['auth'])
     ->group(function () {
 
         Route::get('/dashboard', [AdminDashboardController::class, 'index'])->name('dashboard');
+
+        // Reports: explicit export and index routes first
+        Route::get('reports/export', [ReportController::class, 'export'])->name('reports.export');
+        Route::get('reports', [ReportController::class, 'index'])->name('reports.index');
+
+        // If you still want resourceful routes for reports (show, destroy, etc),
+        // register them after the explicit routes and limit to the actions you need.
         Route::resource('employees', EmployeeController::class);
-        Route::resource('reports', ReportController::class);
+        Route::resource('reports', ReportController::class)
+            ->except(['create', 'store', 'edit', 'update', 'index']); // index/export handled above
     });
 
 /*
 |--------------------------------------------------------------------------
-| Auth Routes (Breeze)
+| Admin plans (example)
 |--------------------------------------------------------------------------
 */
-
-// routes/web.php (inside admin group)
 Route::resource('plans', \App\Http\Controllers\Admin\PlanController::class)
     ->only(['index','edit','update'])
     ->names([
@@ -137,16 +139,20 @@ Route::resource('plans', \App\Http\Controllers\Admin\PlanController::class)
         'update'=> 'admin.plans.update',
     ]);
 
-// Payment-specific receipt (accepts Payment $payment)
+/*
+|--------------------------------------------------------------------------
+| Backwards-compatible named routes (if other views expect these names)
+|--------------------------------------------------------------------------
+*/
 Route::get('secretary/payments/{payment}/receipt-payment', [\App\Http\Controllers\Secretary\PaymentController::class, 'receiptForPayment'])
     ->name('secretary.payments.receipt.payment');
 
-// Existing student receipt route (keeps working as-is)
 Route::get('secretary/students/{student}/receipt', [\App\Http\Controllers\Secretary\PaymentController::class, 'receipt'])
     ->name('secretary.payments.receipt');
 
-    
-
-    Route::get('secretary/students/verify-email', [StudentController::class, 'verifyEmail'])
-    ->name('secretary.students.verifyEmail');
+/*
+|--------------------------------------------------------------------------
+| Auth routes
+|--------------------------------------------------------------------------
+*/
 require __DIR__.'/auth.php';
