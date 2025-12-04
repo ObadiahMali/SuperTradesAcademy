@@ -83,17 +83,14 @@ Route::prefix('secretary')
         Route::patch('expenses/{expense}/toggle-paid', [ExpenseController::class, 'togglePaid'])
             ->name('expenses.togglePaid');
 
-        // Payment receipt routes
-        // - payment-specific receipt (accepts Payment $payment)
+        // Payment receipt routes (payment-level receipts)
+        // Simple alias name: secretary.payments.receipt
         Route::get('payments/{payment}/receipt', [PaymentController::class, 'receiptForPayment'])
-            ->name('payments.receipt.payment');
+            ->name('payments.receipt');
 
+        // PDF version
         Route::get('payments/{payment}/receipt/pdf', [PaymentController::class, 'receiptPdf'])
             ->name('payments.receipt.pdf');
-
-        // Student receipt (accepts Student $student)
-        Route::get('students/{student}/receipt', [PaymentController::class, 'receipt'])
-            ->name('students.receipt');
 
         // Verify email
         Route::get('students/verify-email', [StudentController::class, 'verifyEmail'])
@@ -119,8 +116,7 @@ Route::prefix('admin')
         Route::get('reports/export', [ReportController::class, 'export'])->name('reports.export');
         Route::get('reports', [ReportController::class, 'index'])->name('reports.index');
 
-        // If you still want resourceful routes for reports (show, destroy, etc),
-        // register them after the explicit routes and limit to the actions you need.
+        // Resourceful routes
         Route::resource('employees', EmployeeController::class);
         Route::resource('reports', ReportController::class)
             ->except(['create', 'store', 'edit', 'update', 'index']); // index/export handled above
@@ -128,7 +124,7 @@ Route::prefix('admin')
 
 /*
 |--------------------------------------------------------------------------
-| Admin plans (example)
+| Admin plans
 |--------------------------------------------------------------------------
 */
 Route::resource('plans', \App\Http\Controllers\Admin\PlanController::class)
@@ -138,17 +134,6 @@ Route::resource('plans', \App\Http\Controllers\Admin\PlanController::class)
         'edit'  => 'admin.plans.edit',
         'update'=> 'admin.plans.update',
     ]);
-
-/*
-|--------------------------------------------------------------------------
-| Backwards-compatible named routes (if other views expect these names)
-|--------------------------------------------------------------------------
-*/
-Route::get('secretary/payments/{payment}/receipt-payment', [\App\Http\Controllers\Secretary\PaymentController::class, 'receiptForPayment'])
-    ->name('secretary.payments.receipt.payment');
-
-Route::get('secretary/students/{student}/receipt', [\App\Http\Controllers\Secretary\PaymentController::class, 'receipt'])
-    ->name('secretary.payments.receipt');
 
 /*
 |--------------------------------------------------------------------------

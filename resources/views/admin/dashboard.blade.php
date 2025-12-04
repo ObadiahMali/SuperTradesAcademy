@@ -242,7 +242,7 @@
       @forelse($recentPayments ?? [] as $pay)
         <div class="list-group-item d-flex justify-content-between align-items-start">
           <div>
-            <div class="recent-name">{{ $pay->display_student_name ?? 'Unknown' }}</div>
+           <div class="recent-name">{{ $pay->student->first_name }} {{ $pay->student->last_name }}</div>
             <div class="recent-meta">
               {{ $pay->method ?? 'N/A' }} · {{ optional($pay->created_at)->format('d M Y H:i') ?? 'No date' }}
             </div>
@@ -261,36 +261,37 @@
   </div>
 
   {{-- Active Intakes overview --}}
-  <div class="card p-3 mb-3">
-    <h6 class="mb-2">
-      {{-- intakes icon --}}
-      <svg class="icon-sm" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
-        <path d="M3 7h18" stroke="#0b6ef6" stroke-width="1.2" stroke-linecap="round"/>
-        <path d="M3 12h18" stroke="#0b6ef6" stroke-width="1.2" stroke-linecap="round"/>
-        <path d="M3 17h18" stroke="#0b6ef6" stroke-width="1.2" stroke-linecap="round"/>
-      </svg>
-      Active Intakes
-    </h6>
+<div class="card p-3 mb-3">
+  <h6 class="mb-2">
+    {{-- intakes icon --}}
+    <svg class="icon-sm" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+      <path d="M3 7h18" stroke="#0b6ef6" stroke-width="1.2" stroke-linecap="round"/>
+      <path d="M3 12h18" stroke="#0b6ef6" stroke-width="1.2" stroke-linecap="round"/>
+      <path d="M3 17h18" stroke="#0b6ef6" stroke-width="1.2" stroke-linecap="round"/>
+    </svg>
+    Active Intakes
+  </h6>
 
-    <div class="row">
-      @forelse($activeIntakes ?? [] as $intake)
-        <div class="col-md-4 mb-2">
-          <div class="border rounded p-2">
-            <div class="intake-name">{{ $intake->name ?? 'Untitled intake' }}</div>
+  <div class="row">
+    @forelse($activeIntakes ?? [] as $intake)
+      <div class="col-md-4 mb-2">
+        <div class="border rounded p-2">
+          <div class="intake-name">{{ $intake->name ?? 'Untitled intake' }}</div>
 
-            <div class="intake-meta">
-              {{ optional($intake->start_date)->format('d M Y') ?? 'No start date' }}
-            </div>
-
-            <div class="small">Students: {{ $intake->students_count ?? 0 }}</div>
-            <div class="small">Paid: {{ $intake->paid_pct ?? 0 }}%</div>
+          <div class="intake-meta">
+            {{ optional($intake->start_date)->format('d M Y') ?? 'No start date' }}
           </div>
+
+         <div class="small">Students: {{ $intake->students_count ?? 0 }}</div>
+          {{-- <div class="small">Outstanding: UGX {{ number_format($intake->outstanding ?? 0, 2) }}</div>
+          <div class="small">Paid: {{ $intake->paid_pct ?? 0 }}%</div> --}}
         </div>
-      @empty
-        <div class="col-12 text-muted">No active intakes</div>
-      @endforelse
-    </div>
+      </div>
+    @empty
+      <div class="col-12 text-muted">No active intakes</div>
+    @endforelse
   </div>
+</div>
 
   {{-- Employees and Reports --}}
   <div class="row g-3 mb-3">

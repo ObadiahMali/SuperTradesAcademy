@@ -169,23 +169,23 @@
         </div>
 
 
-        <div class="mb-3">
-          <label class="form-label" for="plan_key">Select Plan</label>
-          <select name="plan_key" id="plan_key" class="select-lg form-select" required>
-            <option value="">Choose a plan</option>
+       <div class="mb-3">
+  <label class="form-label" for="plan_key">Select Plan</label>
+  <select name="plan_key" id="plan_key" class="select-lg form-select" required>
+    <option value="">Choose a plan</option>
 
-            @foreach($plans as $plan)
-              <option value="{{ $plan->key }}"
-                      data-price="{{ $plan->price }}"
-                      data-currency="{{ $plan->currency }}"
-                      @selected(old('plan_key') == $plan->key)>
-                {{ $plan->label }} — {{ number_format($plan->price, 2) }} {{ $plan->currency }}
-              </option>
-            @endforeach
+ @foreach($plans as $key => $plan)
+  <option value="{{ $key }}"
+          data-price="{{ $plan['price'] }}"
+          data-currency="{{ $plan['currency'] }}"
+          @selected(old('plan_key') == $key)>
+    {{ $plan['label'] }} — {{ number_format($plan['price'], 2) }} {{ $plan['currency'] }}
+  </option>
+@endforeach
 
-          </select>
-          @error('plan_key')<div class="error">{{ $message }}</div>@enderror
-        </div>
+  </select>
+  @error('plan_key')<div class="error">{{ $message }}</div>@enderror
+</div>
 
         <div class="mb-3">
   <label class="form-label" for="address_line1">Address line 1</label>

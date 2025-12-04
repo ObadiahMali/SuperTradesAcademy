@@ -27,7 +27,8 @@ class StudentController extends Controller
                 $s->where('first_name', 'like', "%{$q}%")
                   ->orWhere('last_name', 'like', "%{$q}%")
                   ->orWhere('email', 'like', "%{$q}%")
-                  ->orWhere('phone', 'like', "%{$q}%");
+                  ->orWhere('phone', 'like', "%{$q}%")
+                  ->orWhere('phone_full', 'like', "%{$q}%");
             });
         }
 
@@ -38,13 +39,14 @@ class StudentController extends Controller
         $students = $query->paginate(20);
 
         $exchange = app(\App\Services\ExchangeRateService::class);
+        $plansConfig = config('plans.plans') ?? [];
 
         foreach ($students as $student) {
             // Determine canonical course fee in UGX
             if (!empty($student->course_fee) && strtoupper($student->currency ?? 'UGX') === 'UGX') {
                 $courseFeeUGX = (float) $student->course_fee;
             } else {
-                $configPlan = config("plans.plans.{$student->plan_key}") ?? null;
+                $configPlan = $plansConfig[$student->plan_key] ?? null;
                 $planPrice = $configPlan['price'] ?? 0;
                 $planCurrency = strtoupper($configPlan['currency'] ?? ($student->currency ?? 'UGX'));
 
@@ -72,6 +74,13 @@ class StudentController extends Controller
 
             $student->amount_due = max(0, $courseFeeUGX - $totalPaidUGX);
             $student->display_currency = 'UGX';
+
+            // Friendly plan label for index view
+            $student->plan_label = $plansConfig[$student->plan_key]['label'] ?? ($student->plan_key ? ucfirst(str_replace('_', ' ', $student->plan_key)) : '—');
+
+            // Ensure phone display fields exist for the view
+            $student->phone_display = $student->phone_full
+                ?? (!empty($student->phone_country_code) ? ('+' . ltrim($student->phone_country_code, '+') . ' ' . ($student->phone ?? '')) : ($student->phone ?? '—'));
         }
 
         $intakes = Intake::orderBy('start_date', 'desc')->get();
@@ -86,7 +95,7 @@ class StudentController extends Controller
     public function create()
     {
         $intakes = Intake::orderBy('start_date', 'desc')->get();
-        $plans = config('plans.plans');
+        $plans = config('plans.plans') ?? [];
 
         return view('secretary.students.create', compact('intakes', 'plans'));
     }
@@ -98,7 +107,7 @@ class StudentController extends Controller
     {
         $intake = $student->intake;
         $intakes = Intake::orderBy('start_date', 'desc')->get();
-        $plans = config('plans.plans');
+        $plans = config('plans.plans') ?? [];
 
         return view('secretary.students.edit', compact('student', 'intake', 'intakes', 'plans'));
     }
@@ -111,28 +120,31 @@ class StudentController extends Controller
         \Log::info('Student store payload', $request->all());
 
         $data = $request->validate([
-            'intake_id'      => 'required|exists:intakes,id',
-            'first_name'     => 'required|string|max:255',
-            'last_name'      => 'nullable|string|max:255',
-            'phone'          => 'nullable|string|max:50',
-            'email'          => 'nullable|email|unique:students,email',
-            'plan_key'       => 'required|string',
-            'address_line1'  => 'nullable|string|max:255',
-            'address_line2'  => 'nullable|string|max:255',
-            'city'           => 'nullable|string|max:120',
-            'region'         => 'nullable|string|max:120',
-            'postal_code'    => 'nullable|string|max:30',
-            'country'        => 'nullable|string|max:120',
+            'intake_id'           => 'required|exists:intakes,id',
+            'first_name'          => 'required|string|max:255',
+            'last_name'           => 'nullable|string|max:255',
+            'phone'               => 'nullable|string|max:50',
+            'phone_country_code'  => 'nullable|string|max:8',
+            'email'               => 'nullable|email|unique:students,email',
+            'plan_key'            => 'required|string',
+            'address_line1'       => 'nullable|string|max:255',
+            'address_line2'       => 'nullable|string|max:255',
+            'city'                => 'nullable|string|max:120',
+            'region'              => 'nullable|string|max:120',
+            'postal_code'         => 'nullable|string|max:30',
+            'country'             => 'nullable|string|max:120',
         ]);
 
-        $configPlan = config('plans.plans')[$data['plan_key']] ?? null;
+        $plansConfig = config('plans.plans') ?? [];
+        $configPlan = $plansConfig[$data['plan_key']] ?? null;
         $exchange = app(\App\Services\ExchangeRateService::class);
 
         if ($configPlan) {
-            $planPrice = $configPlan['price'];
-            $planCurrency = strtoupper($configPlan['currency']);
+            $planPrice = $configPlan['price'] ?? 0;
+            $planCurrency = strtoupper($configPlan['currency'] ?? 'UGX');
 
             if ($planCurrency === 'USD') {
+                // store canonical course_fee in UGX for consistency
                 $data['course_fee'] = $exchange->usdToUgx($planPrice);
                 $data['currency'] = 'UGX';
             } else {
@@ -141,8 +153,15 @@ class StudentController extends Controller
             }
         }
 
+        // Normalize phone: keep digits only for phone, keep country code separate if provided
         $rawPhone = preg_replace('/\D+/', '', $data['phone'] ?? '');
         $data['phone'] = $rawPhone;
+        if (!empty($data['phone_country_code'])) {
+            $data['phone_country_code'] = preg_replace('/\D+/', '', $data['phone_country_code']);
+            $data['phone_full'] = '+' . ltrim($data['phone_country_code'], '+') . ' ' . $rawPhone;
+        } else {
+            $data['phone_full'] = $rawPhone ? $rawPhone : null;
+        }
 
         $plainToken = null;
         if (!empty($data['email'])) {
@@ -170,19 +189,63 @@ class StudentController extends Controller
 
     /**
      * Display the specified student.
-     */
-    public function show(Student $student)
-    {
-        $exchange = app(\App\Services\ExchangeRateService::class);
+     */public function show(Student $student)
+{
+    $exchange = app(\App\Services\ExchangeRateService::class);
+    $plansConfig = config('plans.plans') ?? [];
 
-        $totalDue = $student->course_fee;
-        $totalPaid = $student->payments()->sum('amount_converted') ?: $student->payments()->sum('amount');
-        $balance = max(0, $totalDue - $totalPaid);
-
-        $payments = $student->payments()->orderByDesc('paid_at')->get();
-
-        return view('secretary.students.show', compact('student', 'payments'));
+    // Determine plan price in UGX (or course_fee if already UGX)
+    $plan = $plansConfig[$student->plan_key] ?? null;
+    if ($plan && strtoupper($plan['currency'] ?? 'UGX') === 'USD') {
+        $planPriceUGX = $exchange->usdToUgx((float) ($plan['price'] ?? 0));
+    } else {
+        // if plan not set or not USD, fall back to stored course_fee (assumed UGX)
+        $planPriceUGX = (float) ($student->course_fee ?? 0);
     }
+
+    // Total paid in UGX
+    $totalPaidUGX = 0;
+    foreach ($student->payments()->get() as $p) {
+        if (!is_null($p->amount_converted)) {
+            $totalPaidUGX += (float) $p->amount_converted;
+        } else {
+            $pCurrency = strtoupper($p->currency ?? 'UGX');
+            if ($pCurrency === 'USD') {
+                $totalPaidUGX += (float) $exchange->usdToUgx($p->amount);
+            } else {
+                $totalPaidUGX += (float) $p->amount;
+            }
+        }
+    }
+
+    $balanceUGX = max(0, $planPriceUGX - $totalPaidUGX);
+
+    $payments = $student->payments()->orderByDesc('paid_at')->get();
+
+    // Prepare phone display
+    $phoneDisplay = $student->phone_full
+        ?? (!empty($student->phone_country_code)
+            ? ('+' . ltrim($student->phone_country_code, '+') . ' ' . ($student->phone ?? ''))
+            : ($student->phone ?? '—'));
+
+    // Plan label
+    $planLabel = $plan['label'] ?? ($student->plan_key ? ucfirst(str_replace('_', ' ', $student->plan_key)) : '—');
+
+    // Subtotal UGX (converted plan price)
+    $subtotalUGX = $planPriceUGX;
+
+    return view('secretary.students.show', compact(
+        'student',
+        'payments',
+        'plan',
+        'planLabel',
+        'planPriceUGX',
+        'totalPaidUGX',
+        'balanceUGX',
+        'phoneDisplay',
+        'subtotalUGX' // <-- new variable for Blade
+    ));
+}
 
     /**
      * Verify student's email using token.
@@ -234,6 +297,13 @@ class StudentController extends Controller
         if ($student->email_verification_sent_at && $student->email_verification_sent_at->diffInMinutes(now()) < 5) {
             return back()->with('error', 'Please wait a few minutes before resending verification.');
         }
+
+        // generate a new token and update student
+        $plainToken = Str::random(40);
+        $student->email_verification_token = hash('sha256', $plainToken);
+        $student->email_verification_sent_at = now();
+        $student->save();
+
         try {
             Mail::to($student->email)->queue(new StudentEmailVerification($student, $plainToken));
         } catch (\Throwable $e) {
@@ -252,7 +322,54 @@ class StudentController extends Controller
      */
     public function update(Request $request, Student $student)
     {
-        // Implement update logic as needed.
+        $data = $request->validate([
+            'intake_id'           => 'required|exists:intakes,id',
+            'first_name'          => 'required|string|max:255',
+            'last_name'           => 'nullable|string|max:255',
+            'phone'               => 'nullable|string|max:50',
+            'phone_country_code'  => 'nullable|string|max:8',
+            'email'               => 'nullable|email|unique:students,email,' . $student->id,
+            'plan_key'            => 'nullable|string',
+            'address_line1'       => 'nullable|string|max:255',
+            'address_line2'       => 'nullable|string|max:255',
+            'city'                => 'nullable|string|max:120',
+            'region'              => 'nullable|string|max:120',
+            'postal_code'         => 'nullable|string|max:30',
+            'country'             => 'nullable|string|max:120',
+        ]);
+
+        // Normalize phone and phone_full
+        $rawPhone = preg_replace('/\D+/', '', $data['phone'] ?? '');
+        $data['phone'] = $rawPhone;
+        if (!empty($data['phone_country_code'])) {
+            $data['phone_country_code'] = preg_replace('/\D+/', '', $data['phone_country_code']);
+            $data['phone_full'] = '+' . ltrim($data['phone_country_code'], '+') . ' ' . $rawPhone;
+        } else {
+            $data['phone_full'] = $rawPhone ? $rawPhone : null;
+        }
+
+        // If plan changed, update course_fee accordingly
+        if (!empty($data['plan_key'])) {
+            $plansConfig = config('plans.plans') ?? [];
+            $configPlan = $plansConfig[$data['plan_key']] ?? null;
+            $exchange = app(\App\Services\ExchangeRateService::class);
+
+            if ($configPlan) {
+                $planPrice = $configPlan['price'] ?? 0;
+                $planCurrency = strtoupper($configPlan['currency'] ?? 'UGX');
+
+                if ($planCurrency === 'USD') {
+                    $data['course_fee'] = $exchange->usdToUgx($planPrice);
+                    $data['currency'] = 'UGX';
+                } else {
+                    $data['course_fee'] = $planPrice;
+                    $data['currency'] = $planCurrency;
+                }
+            }
+        }
+
+        $student->update($data);
+
         return redirect()->route('secretary.students.index')->with('status', 'Student updated successfully.');
     }
 
@@ -265,4 +382,3 @@ class StudentController extends Controller
         return redirect()->route('secretary.students.index')->with('success', 'Student deleted.');
     }
 }
-       

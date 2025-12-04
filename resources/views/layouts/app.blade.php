@@ -7,6 +7,13 @@
 
     <title>@yield('title', config('app.name'))</title>
 
+    <!-- Favicon -->
+    <link rel="icon" href="{{ asset('favicon.ico') }}" type="image/x-icon">
+    <link rel="shortcut icon" href="{{ asset('images/logo2.jfif') }}"  type="image/x-icon">
+    <link rel="icon" href="{{ asset('images/logo2.jfif') }}"  sizes="32x32" type="image/png">
+    <link rel="icon" href=""{{ asset('images/logo2.jfif') }}"  sizes="16x16" type="image/png">
+    <link rel="apple-touch-icon" href="{{ asset('apple-touch-icon.png') }}" sizes="180x180">
+
     <!-- Bootstrap core CSS -->
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css"
           rel="stylesheet"

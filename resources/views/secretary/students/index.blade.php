@@ -1,5 +1,8 @@
+{{-- resources/views/secretary/students/index.blade.php --}}
 @extends('layouts.app')
+
 @section('title','Students')
+
 @section('content')
 
 <style>
@@ -36,7 +39,7 @@
   </div>
 
   <div class="controls">
-    @if(isset($activeIntake) && $activeIntake)
+    @if(!empty($activeIntake))
       <a href="{{ route('secretary.students.create', ['intake' => $activeIntake->id]) }}" class="btn btn-primary compact-btn">
         <i class="bi bi-person-plus me-1"></i> Register student
       </a>
@@ -58,7 +61,7 @@
             <label class="form-label small mb-1">Intake</label>
             <select name="intake_id" class="form-select form-select-sm">
               <option value="">All</option>
-              @foreach($intakes as $i)
+              @foreach($intakes ?? collect() as $i)
                 <option value="{{ $i->id }}" @selected(request('intake_id') == $i->id)>{{ $i->name }}</option>
               @endforeach
             </select>
@@ -77,7 +80,7 @@
   <div class="d-flex justify-content-between align-items-center mb-3">
     <div>
       <div class="muted">Showing</div>
-      <div style="font-weight:700">{{ $students->total() }} students</div>
+      <div style="font-weight:700">{{ $students->total() ?? 0 }} students</div>
     </div>
     <div class="muted">Updated: {{ \Carbon\Carbon::now()->format('d M Y, H:i') }}</div>
   </div>
@@ -91,23 +94,49 @@
           <th>Intake</th>
           <th>Email</th>
           <th>Phone</th>
+          <th>Plan</th>
           <th>Registered</th>
           <th class="text-end">Amount Due</th>
           <th class="text-end">Actions</th>
         </tr>
       </thead>
+
       <tbody>
         @forelse($students as $student)
           @php
-            $plan = config("pricing.plans.{$student->plan_key}") ?? ['price'=>0,'currency'=>'UGX'];
-            $converted = $plan['currency'] === 'USD'
-                ? app(\App\Services\ExchangeRateService::class)->usdToUgx($plan['price'])
-                : $plan['price'];
-            $courseFeeUGX = strtoupper($student->currency ?? 'UGX') === 'UGX'
-                ? ($student->course_fee ?? $converted)
-                : $converted;
-            $totalPaidUGX = $student->payments->sum('amount_converted');
+            // safe display name
+            $studentName = $student->full_name ?: trim(($student->first_name ?? '') . ' ' . ($student->last_name ?? ''));
+
+            // plan label only (no price)
+            $planLabel = config("pricing.plans.{$student->plan_key}.label")
+                         ?? config("plans.plans.{$student->plan_key}.label")
+                         ?? ($student->plan_key ? ucfirst(str_replace('_',' ',$student->plan_key)) : '—');
+
+            // compute due in UGX: use course_fee if set, otherwise 0; convert payments to UGX if needed
+            $rates = app(\App\Services\ExchangeRateService::class);
+            $courseFeeUGX = strtoupper($student->currency ?? 'UGX') === 'USD'
+                ? $rates->usdToUgx((float) ($student->course_fee ?? 0))
+                : (float) ($student->course_fee ?? 0);
+
+            $totalPaidUGX = 0;
+            foreach ($student->payments ?? collect() as $p) {
+                $amt = $p->amount_converted ?? null;
+                if ($amt === null) {
+                    $amt = strtoupper($p->currency ?? 'UGX') === 'USD' ? $rates->usdToUgx((float)$p->amount) : (float)$p->amount;
+                }
+                $totalPaidUGX += $amt;
+            }
             $dueUGX = max(0, $courseFeeUGX - $totalPaidUGX);
+
+            // phone display: prefer phone_full, otherwise combine country code + phone, fallback to dash
+            if (!empty($student->phone_full)) {
+                $phoneDisplay = $student->phone_full;
+            } elseif (!empty($student->phone_country_code) || !empty($student->phone)) {
+                $dial = !empty($student->phone_country_code) ? ('+' . ltrim($student->phone_country_code, '+')) : '';
+                $phoneDisplay = trim($dial . ' ' . ($student->phone ?? ''));
+            } else {
+                $phoneDisplay = '—';
+            }
           @endphp
 
           <tr>
@@ -122,7 +151,7 @@
             </td>
 
             <td>
-              <div style="font-weight:700">{{ $student->first_name }} {{ $student->last_name }}</div>
+              <div style="font-weight:700">{{ $studentName }}</div>
               <div class="muted small">{{ $student->student_id ?? '' }}</div>
             </td>
 
@@ -134,33 +163,37 @@
             </td>
 
             <td>{{ $student->email ?? '—' }}</td>
-            <td>{{ $student->phone ?? '—' }}</td>
-            <td>{{ \Carbon\Carbon::parse($student->created_at)->format('d M Y') }}</td>
 
-        <td class="text-end">
-  <div class="amount">
-    @if(($student->amount_due ?? 0) > 0)
-      <span style="color:red">UGX {{ number_format($student->amount_due, 2) }}</span>
-    @else
-      <span style="color:green">No outstanding balance</span>
-    @endif
-  </div>
-  <div class="muted small">Balance</div>
-</td>
+            <td>{{ $phoneDisplay }}</td>
+
+            <td>
+              <div>{{ $planLabel }}</div>
+            </td>
+
+            <td>{{ optional($student->created_at)->format('d M Y') ?? '—' }}</td>
+
+            <td class="text-end">
+              <div class="amount">
+                @if($dueUGX > 0)
+                  <span style="color:red">UGX {{ number_format($dueUGX, 2) }}</span>
+                @else
+                  <span style="color:green">No outstanding balance</span>
+                @endif
+              </div>
+              <div class="muted small">Balance</div>
+            </td>
 
             <td class="text-end">
               <div class="actions-compact" role="group" aria-label="Actions for student {{ $student->id }}">
                 <a href="{{ route('secretary.students.show', $student->id) }}" class="btn btn-sm btn-outline-primary" title="View Student">
                   <i class="bi bi-eye me-1"></i> View
                 </a>
-                               <a href="{{ route('secretary.students.edit', $student->id) }}" class="btn btn-sm btn-outline-secondary" title="Edit Student">
+                <a href="{{ route('secretary.students.edit', $student->id) }}" class="btn btn-sm btn-outline-secondary" title="Edit Student">
                   <i class="bi bi-pencil me-1"></i> Edit
                 </a>
-
                 <a href="{{ route('secretary.payments.create', ['student' => $student->id]) }}" class="btn btn-sm btn-success" title="Record Payment">
                   <i class="bi bi-currency-dollar me-1"></i> Record Payment
                 </a>
-
                 <form action="{{ route('secretary.students.destroy', $student->id) }}" method="POST" class="d-inline-block" onsubmit="return confirm('Delete student?');">
                   @csrf
                   @method('DELETE')
@@ -173,7 +206,7 @@
           </tr>
         @empty
           <tr>
-            <td colspan="8" class="text-center empty-note">No students found</td>
+            <td colspan="9" class="text-center empty-note">No students found</td>
           </tr>
         @endforelse
       </tbody>
@@ -181,7 +214,7 @@
   </div>
 
   <div class="d-flex justify-content-between align-items-center mt-3">
-    <div class="muted small">Showing page {{ $students->currentPage() }} of {{ $students->lastPage() }}</div>
+    <div class="muted small">Showing page {{ $students->currentPage() ?? 1 }} of {{ $students->lastPage() ?? 1 }}</div>
     <div>
       {{ $students->withQueryString()->links() }}
     </div>

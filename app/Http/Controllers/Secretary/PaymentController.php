@@ -18,79 +18,85 @@ class PaymentController extends Controller
     /**
      * Display a listing of payments with filters and totals.
      */
-    public function index(Request $request)
-    {
-        $query = Payment::with(['student.intake', 'student'])->latest();
+  public function index(Request $request)
+{
+    $query = Payment::with(['student.intake', 'student'])->latest();
 
-        if ($q = $request->query('q')) {
-            $query->where(function ($qb) use ($q) {
-                $qb->where('reference', 'like', "%{$q}%")
-                   ->orWhere('method', 'like', "%{$q}%")
-                   ->orWhere('amount', 'like', "%{$q}%")
-                   ->orWhereHas('student', function ($s) use ($q) {
-                       $s->where('first_name', 'like', "%{$q}%")
-                         ->orWhere('last_name', 'like', "%{$q}%")
-                         ->orWhere('student_id', 'like', "%{$q}%");
-                   });
-            });
-        }
-
-        if ($currency = $request->query('currency')) {
-            $query->where('currency', $currency);
-        }
-
-        $from = $request->query('from');
-        $to = $request->query('to');
-
-        if ($from || $to) {
-            $fromDate = $from ? Carbon::parse($from)->startOfDay()->toDateTimeString() : null;
-            $toDate   = $to   ? Carbon::parse($to)->endOfDay()->toDateTimeString()   : null;
-
-            $query->where(function ($qb) use ($fromDate, $toDate) {
-                if ($fromDate && $toDate) {
-                    $qb->whereBetween('paid_at', [$fromDate, $toDate])
-                       ->orWhereBetween('created_at', [$fromDate, $toDate]);
-                } elseif ($fromDate) {
-                    $qb->where(function ($q) use ($fromDate) {
-                        $q->where('paid_at', '>=', $fromDate)
-                          ->orWhere('created_at', '>=', $fromDate);
-                    });
-                } elseif ($toDate) {
-                    $qb->where(function ($q) use ($toDate) {
-                        $q->where('paid_at', '<=', $toDate)
-                          ->orWhere('created_at', '<=', $toDate);
-                    });
-                }
-            });
-        }
-
-        $totalsQuery = (clone $query);
-        $payments = $query->paginate(10)->withQueryString();
-
-        $totalsByCurrency = $totalsQuery
-            ->selectRaw('currency, SUM(amount) as total')
-            ->groupBy('currency')
-            ->get()
-            ->pluck('total', 'currency')
-            ->map(fn($v) => (float) $v);
-
-        $startOfMonth = Carbon::now()->startOfMonth();
-        $endOfMonth = Carbon::now()->endOfMonth();
-
-        $thisMonthTotals = Payment::whereBetween('paid_at', [$startOfMonth, $endOfMonth])
-            ->selectRaw('currency, SUM(amount) as total')
-            ->groupBy('currency')
-            ->get()
-            ->pluck('total', 'currency')
-            ->map(fn($v) => (float) $v);
-
-        return view('secretary.payments.index', [
-            'payments' => $payments,
-            'totalsByCurrency' => $totalsByCurrency,
-            'thisMonthTotals' => $thisMonthTotals,
-        ]);
+    if ($q = $request->query('q')) {
+        $query->where(function ($qb) use ($q) {
+            $qb->where('reference', 'like', "%{$q}%")
+               ->orWhere('method', 'like', "%{$q}%")
+               ->orWhere('amount', 'like', "%{$q}%")
+               ->orWhereHas('student', function ($s) use ($q) {
+                   $s->where('first_name', 'like', "%{$q}%")
+                     ->orWhere('last_name', 'like', "%{$q}%")
+                     ->orWhere('student_id', 'like', "%{$q}%");
+               });
+        });
     }
 
+    if ($currency = $request->query('currency')) {
+        $query->where('currency', $currency);
+    }
+
+    $from = $request->query('from');
+    $to   = $request->query('to');
+
+    if ($from || $to) {
+        $fromDate = $from ? Carbon::parse($from)->startOfDay()->toDateTimeString() : null;
+        $toDate   = $to   ? Carbon::parse($to)->endOfDay()->toDateTimeString()   : null;
+
+        $query->where(function ($qb) use ($fromDate, $toDate) {
+            if ($fromDate && $toDate) {
+                $qb->whereBetween('paid_at', [$fromDate, $toDate])
+                   ->orWhereBetween('created_at', [$fromDate, $toDate]);
+            } elseif ($fromDate) {
+                $qb->where(function ($q) use ($fromDate) {
+                    $q->where('paid_at', '>=', $fromDate)
+                      ->orWhere('created_at', '>=', $fromDate);
+                });
+            } elseif ($toDate) {
+                $qb->where(function ($q) use ($toDate) {
+                    $q->where('paid_at', '<=', $toDate)
+                      ->orWhere('created_at', '<=', $toDate);
+                });
+            }
+        });
+    }
+
+    $totalsQuery = (clone $query);
+    $payments = $query->paginate(10)->withQueryString();
+
+    $totalsByCurrency = $totalsQuery
+        ->selectRaw('currency, SUM(amount) as total')
+        ->groupBy('currency')
+        ->get()
+        ->pluck('total', 'currency')
+        ->map(fn($v) => (float) $v);
+
+    $startOfMonth = Carbon::now()->startOfMonth();
+    $endOfMonth   = Carbon::now()->endOfMonth();
+
+    $thisMonthTotals = Payment::whereBetween('paid_at', [$startOfMonth, $endOfMonth])
+        ->selectRaw('currency, SUM(amount) as total')
+        ->groupBy('currency')
+        ->get()
+        ->pluck('total', 'currency')
+        ->map(fn($v) => (float) $v);
+
+    // Recent payments with student eager-loaded
+    $recentPayments = Payment::with('student')
+        ->orderByDesc('paid_at')
+        ->limit(8)
+        ->get();
+
+    return view('secretary.payments.index', [
+        'payments'        => $payments,
+        'totalsByCurrency'=> $totalsByCurrency,
+        'thisMonthTotals' => $thisMonthTotals,
+        'recentPayments'  => $recentPayments, // <-- include this
+    ]);
+}
     /**
      * Show the form for creating a new payment.
      */
@@ -107,6 +113,10 @@ class PaymentController extends Controller
     /**
      * Store a newly created payment in storage.
      */
+
+    /**
+     * Store a newly created payment in storage.
+     */
     public function store(Request $request)
     {
         $data = $request->validate([
@@ -119,38 +129,48 @@ class PaymentController extends Controller
 
         $student = Student::findOrFail($data['student_id']);
 
+        // Generate receipt number
         $receiptNumber = 'STA-' . now()->format('YmdHis') . '-' . strtoupper(Str::random(4));
-        $rateService = app(ExchangeRateService::class);
 
+        // Convert amount to UGX if needed
+        $rateService = app(ExchangeRateService::class);
         $amount = (float) $data['amount'];
         $currency = strtoupper($data['currency']);
         $convertedAmount = $currency === 'USD'
             ? $rateService->usdToUgx($amount)
             : $amount;
 
+        // Create payment record
         $payment = new Payment([
-            'student_id' => $student->id,
-            'intake_id' => $student->intake_id,
-            'amount' => $amount,
-            'currency' => $currency,
-            'amount_converted' => $convertedAmount,
-            'converted_currency' => 'UGX',
-            'method' => $data['method'],
-            'paid_at' => now(),
-            'receipt_number' => $receiptNumber,
-            'plan_key' => $student->plan_key,
-            'created_by' => auth()->id(),
-            'notes' => $data['notes'] ?? null,
+            'student_id'        => $student->id,
+            'intake_id'         => $student->intake_id,
+            'amount'            => $amount,
+            'currency'          => $currency,
+            'amount_converted'  => $convertedAmount,
+            'converted_currency'=> 'UGX',
+            'method'            => $data['method'],
+            'paid_at'           => now(),
+            'receipt_number'    => $receiptNumber,
+            'plan_key'          => $student->plan_key,
+            'created_by'        => auth()->id(),
+            'notes'             => $data['notes'] ?? null,
         ]);
 
         $payment->save();
 
+        // Redirect back to student profile if route exists
         if (Route::has('secretary.students.show')) {
-            return redirect()->route('secretary.students.show', $student)->with('success', 'Payment recorded.');
+            return redirect()
+                ->route('secretary.students.show', $student->id)
+                ->with('success', 'Payment recorded.');
         }
 
-        return redirect()->route('secretary.payments.index')->with('success', 'Payment recorded.');
+        // Fallback redirect
+        return redirect()
+            ->route('secretary.payments.index')
+            ->with('success', 'Payment recorded.');
     }
+
 
     /**
      * Display a single payment.
@@ -249,7 +269,7 @@ class PaymentController extends Controller
         $receiptNumber = $payment->receipt_number ?? $payment->reference ?? '—';
         $receiptDate = $payment->paid_at ?? $payment->created_at ?? now();
 
-        return view('secretary.students.receipt', compact(
+        return view('secretary.payments.receipt', compact(
             'student','payments','planLabel','originalDisplay','totalPaidUGX','balanceUGX','receiptNumber','receiptDate'
         ));
     }

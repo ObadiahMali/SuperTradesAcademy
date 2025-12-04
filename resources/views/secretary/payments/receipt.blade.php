@@ -104,9 +104,10 @@
 
       <div class="meta">
         <div style="font-weight:700">Payment Receipt</div>
-        <div>Receipt: {{ $receiptNumber ?? 'N/A' }}</div>
+        {{-- <div>Receipt: {{ $receiptNumber ?? 'N/A' }}</div> --}}
         <div>Date: {{ $formatDate($issuedAt) }}</div>
-        <div class="muted">Receipt for: {{ $plan['label'] }} ({{ $plan['currency'] }} {{ number_format($plan['price'], 2) }})</div>
+        <div class="muted">Receipt for:  {{ $planLabel }} UGX {{ number_format($student->course_fee ?? 0, 0) }}</div>
+          {{-- <div><strong>Total Price (UGX):</strong> UGX {{ number_format($student->course_fee ?? 0, 0) }}</div> --}}
       </div>
     </div>
 
@@ -118,7 +119,7 @@
         <h4>Student</h4>
         <p><strong>{{ $student->first_name }} {{ $student->last_name }}</strong></p>
         <p>ID: {{ $student->id }}</p>
-        <p>Intake: {{ optional($intake)->name ?? '—' }}</p>
+       <p>Intake: {{ optional($student->intake)->name ?? '—' }}</p>
         @if($student->email)<p>Email: {{ $student->email }}</p>@endif
         @if($student->phone)<p>Phone: {{ $student->phone }}</p>@endif
         <p>Status: <span class="badge">{{ $student->status ?? '—' }}</span></p>
@@ -130,13 +131,13 @@
           <div style="display:flex;justify-content:space-between;gap:12px;align-items:center">
             <div>
               <div class="muted">Plan</div>
-              <div style="font-weight:700">{{ $plan['label'] }}</div>
-              <div class="muted" style="margin-top:6px">Original: {{ $plan['currency'] }} {{ number_format($plan['price'], 2) }}</div>
+              <div style="font-weight:700">{{ $planLabel }}</div>
+              {{-- <div class="muted" style="margin-top:6px">Original: {{ $plan['currency'] }} {{ number_format($plan['price'], 2) }}</div> --}}
             </div>
 
             <div style="min-width:160px;text-align:right">
-              <div class="muted">Course Fee (UGX)</div>
-              <div class="amount">UGX {{ number_format($courseFeeUGX, 2) }}</div>
+              <div class="muted">Course Fee </div>
+              <div class="amount">Price: {{ $originalDisplay }}</div>
             </div>
           </div>
 
