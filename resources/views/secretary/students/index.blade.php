@@ -49,10 +49,10 @@
       </a>
     @endif
 
-    <form action="{{ route('secretary.students.index') }}" method="GET" class="d-flex align-items-center">
-      <input name="q" value="{{ request('q') }}" class="form-control form-control-sm search-input" placeholder="Search name, email or phone" />
-    </form>
-
+   <form action="{{ route('secretary.students.index') }}" method="GET" class="d-flex align-items-center position-relative" autocomplete="off">
+  <input id="student-search" name="q" value="{{ request('q') }}" class="form-control form-control-sm search-input" placeholder="Search name, email or phone" />
+  <div id="student-suggestions" class="list-group position-absolute" style="z-index:1050; top:42px; left:0; right:0; display:none;"></div>
+</form>
     <div class="dropdown">
       <button class="btn btn-outline-secondary btn-sm compact-btn dropdown-toggle" data-bs-toggle="dropdown">Filter</button>
       <div class="dropdown-menu dropdown-menu-end p-3" style="min-width:260px;">
@@ -221,4 +221,112 @@
   </div>
 </div>
 
+
+<script>
+(function () {
+  const input = document.getElementById('student-search');
+  const box = document.getElementById('student-suggestions');
+  if (!input || !box) return;
+
+  let timer = null;
+
+  function clearBox() {
+    box.innerHTML = '';
+    box.style.display = 'none';
+  }
+
+  function render(items) {
+    box.innerHTML = '';
+    if (!items || items.length === 0) {
+      clearBox();
+      return;
+    }
+
+    items.forEach(it => {
+      const a = document.createElement('a');
+      a.href = it.url || '#';
+      a.className = 'list-group-item list-group-item-action d-flex justify-content-between align-items-start';
+      a.innerHTML = `
+        <div class="ms-1 me-auto">
+          <div style="font-weight:700">${escapeHtml(it.name)}</div>
+          <div class="small text-muted">${escapeHtml(it.intake || '')} ${it.email ? '· ' + escapeHtml(it.email) : ''}</div>
+        </div>
+        <div class="text-end small text-muted">${escapeHtml(it.phone || '')}</div>
+      `;
+      // If you prefer clicking to fill input instead of navigate, replace with click handler:
+      // a.addEventListener('click', function(e){ e.preventDefault(); input.value = it.name; clearBox(); });
+      box.appendChild(a);
+    });
+
+    box.style.display = 'block';
+  }
+
+  function escapeHtml(str) {
+    if (!str) return '';
+    return String(str).replace(/[&<>"'`=\/]/g, function (s) {
+      return ({
+        '&': '&amp;',
+        '<': '&lt;',
+        '>': '&gt;',
+        '"': '&quot;',
+        "'": '&#39;',
+        '/': '&#x2F;',
+        '`': '&#x60;',
+        '=': '&#x3D;'
+      })[s];
+    });
+  }
+
+  input.addEventListener('input', function () {
+    const q = this.value.trim();
+    if (timer) clearTimeout(timer);
+    if (q.length < 2) { // require at least 2 chars
+      clearBox();
+      return;
+    }
+
+    timer = setTimeout(() => {
+      fetch(`{{ route('secretary.students.search') }}?q=${encodeURIComponent(q)}`, {
+        headers: { 'X-Requested-With': 'XMLHttpRequest' }
+      })
+      .then(resp => resp.ok ? resp.json() : Promise.reject(resp))
+      .then(data => render(data))
+      .catch(() => clearBox());
+    }, 300);
+  });
+
+  // hide suggestions when clicking outside
+  document.addEventListener('click', function (e) {
+    if (!box.contains(e.target) && e.target !== input) {
+      clearBox();
+    }
+  });
+
+  // keyboard navigation (optional)
+  input.addEventListener('keydown', function (e) {
+    const items = box.querySelectorAll('a.list-group-item');
+    if (!items.length) return;
+    let idx = Array.from(items).findIndex(i => i.classList.contains('active'));
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      if (idx >= 0) items[idx].classList.remove('active');
+      idx = Math.min(items.length - 1, idx + 1);
+      items[idx].classList.add('active');
+      items[idx].scrollIntoView({ block: 'nearest' });
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      if (idx >= 0) items[idx].classList.remove('active');
+      idx = Math.max(0, idx - 1);
+      items[idx].classList.add('active');
+      items[idx].scrollIntoView({ block: 'nearest' });
+    } else if (e.key === 'Enter') {
+      const active = box.querySelector('a.list-group-item.active');
+      if (active) {
+        e.preventDefault();
+        window.location = active.href;
+      }
+    }
+  });
+})();
+</script>
 @endsection

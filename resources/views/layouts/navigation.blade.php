@@ -190,7 +190,6 @@
         <span style="font-weight:700;color:var(--brand-color);">SuperTrades Academy</span>
       </a>
     </div>
-
 <nav class="nav flex-column" aria-label="Main">
     {{-- Secretary dashboard --}}
     @role('secretary')
@@ -243,8 +242,15 @@
         @endif
     @endhasanyrole
 
-    {{-- Administrator‑only extras --}}
+    {{-- Administrator-only extras --}}
     @role('administrator')
+        @if(Route::has('admin.users.index'))
+            <a href="{{ route('admin.users.index') }}"
+               class="nav-link {{ request()->routeIs('admin.users.*') ? 'active' : '' }}">
+                Users
+            </a>
+        @endif
+
         @if(Route::has('admin.employees.index'))
             <a href="{{ route('admin.employees.index') }}"
                class="nav-link {{ request()->routeIs('admin.employees.*') ? 'active' : '' }}">

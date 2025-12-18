@@ -71,7 +71,7 @@ class AdminDashboardController extends Controller
             }
         }
 
-        // Convert receipts to UGX for the period and all-time
+        // Convert receipts to UGX for the period (month-to-date)
         $paymentsThisMonth = Payment::where('created_at', '>=', $startOfMonth)->get();
         $collectedUGX = 0;
         foreach ($paymentsThisMonth as $p) {
@@ -79,17 +79,18 @@ class AdminDashboardController extends Controller
             $collectedUGX += strtoupper($p->currency ?? 'UGX') === 'USD' ? ($amt * $usdRate) : $amt;
         }
 
-        $paymentsAll = Payment::all();
-        $collectedUGXAllTime = 0;
-        foreach ($paymentsAll as $p) {
-            $amt = (float) ($p->amount ?? 0);
-            $collectedUGXAllTime += strtoupper($p->currency ?? 'UGX') === 'USD' ? ($amt * $usdRate) : $amt;
-        }
+        // All-time collected (converted) already computed as $totalCollectedUGXAll
+        $collectedUGXAllTime = (float) $totalCollectedUGXAll;
 
         // Outstanding and collected percentage (month-to-date vs expected)
         $outstandingUGX = max(0, $expectedUGX - $collectedUGX);
         $collectedPct = $expectedUGX > 0 ? round(($collectedUGX / $expectedUGX) * 100, 2) : 0;
         $collectedPct = min(100, max(0, $collectedPct));
+
+        // All-time outstanding and collected percentage (against expected target)
+        $outstandingUGXAll = max(0, $expectedUGX - $collectedUGXAllTime);
+        $collectedPctAll = $expectedUGX > 0 ? round(min(100, ($collectedUGXAllTime / $expectedUGX) * 100), 2) : 0;
+        $collectedPctAll = min(100, max(0, $collectedPctAll));
 
         // Recent employees and payments for the view (eager load student)
         $recentEmployees = Employee::latest()->take(6)->get();
@@ -140,7 +141,11 @@ class AdminDashboardController extends Controller
             'recentEmployees',
             'reportsCount',
             'recentPayments',
-            'activeIntakes'
+            'activeIntakes',
+            // new all-time variables
+            'collectedUGXAllTime',
+            'outstandingUGXAll',
+            'collectedPctAll'
         ));
     }
 }

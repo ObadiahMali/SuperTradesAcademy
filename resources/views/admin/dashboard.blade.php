@@ -211,21 +211,27 @@
     </div>
 
     <div class="expected-box">
-      <div class="expected-label">Expected UGX</div>
-      <div class="expected-value">UGX {{ number_format($expectedUGX ?? 0, 2) }}</div>
+  <div class="expected-label">Expected UGX</div>
+  <div class="expected-value">UGX {{ number_format($expectedUGX ?? 0, 2) }}</div>
 
-      <div class="expected-label mt-2">Outstanding</div>
-      <div class="outstanding-value">UGX {{ number_format($outstandingUGX ?? 0, 2) }}</div>
-
-      <div class="progress-small mt-2" aria-hidden="false">
-        <div class="bar" style="width: {{ $collectedPct ?? 0 }}%;"></div>
-      </div>
-
-      <div class="muted-note mt-1">
-        {{ $expectedUGX > 0 ? ($collectedPct ?? 0) . '% collected of expected UGX' : 'No expected target set' }}
-      </div>
-    </div>
+  <div class="expected-label mt-2">Outstanding</div>
+  <div class="outstanding-value">
+    UGX {{ number_format( max(0, ($expectedUGX ?? 0) - ($collectedUGXAllTime ?? 0)), 2) }}
   </div>
+
+  <div class="progress-small mt-2" role="progressbar" aria-hidden="false"
+       aria-valuenow="{{ $collectedPctAll ?? 0 }}" aria-valuemin="0" aria-valuemax="100">
+    <div class="bar" style="width: {{ $collectedPctAll ?? 0 }}%;"></div>
+  </div>
+
+  <div class="muted-note mt-1">
+    @if(!empty($expectedUGX) && $expectedUGX > 0)
+      {{ number_format($collectedPctAll ?? 0, 2) }}% collected of expected UGX · Collected: UGX {{ number_format($collectedUGXAllTime ?? 0, 2) }}
+    @else
+      No expected target set
+    @endif
+  </div>
+</div>
 
   {{-- Recent Payments --}}
   <div class="card p-3 mb-3">

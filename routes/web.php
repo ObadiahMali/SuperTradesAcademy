@@ -97,6 +97,8 @@ Route::prefix('secretary')
             ->name('students.verifyEmail');
     });
 
+
+
 /*
 |--------------------------------------------------------------------------
 | Administrator Routes
@@ -120,7 +122,14 @@ Route::prefix('admin')
         Route::resource('employees', EmployeeController::class);
         Route::resource('reports', ReportController::class)
             ->except(['create', 'store', 'edit', 'update', 'index']); // index/export handled above
+             Route::get('users/create', [\App\Http\Controllers\Admin\UserController::class, 'create'])->name('users.create');
+    Route::post('users', [\App\Http\Controllers\Admin\UserController::class, 'store'])->name('users.store');
     });
+
+//     Route::middleware(['auth','is_admin'])->prefix('admin')->name('admin.')->group(function () {
+//     Route::get('users/create', [\App\Http\Controllers\Admin\UserController::class, 'create'])->name('users.create');
+//     Route::post('users', [\App\Http\Controllers\Admin\UserController::class, 'store'])->name('users.store');
+// });
 
 /*
 |--------------------------------------------------------------------------
@@ -134,6 +143,16 @@ Route::resource('plans', \App\Http\Controllers\Admin\PlanController::class)
         'edit'  => 'admin.plans.edit',
         'update'=> 'admin.plans.update',
     ]);
+
+
+
+    // paginated index (existing)
+Route::get('secretary/students', [\App\Http\Controllers\Secretary\StudentController::class, 'index'])
+    ->name('secretary.students.index');
+
+// AJAX search endpoint
+Route::get('secretary/students/search', [\App\Http\Controllers\Secretary\StudentController::class, 'search'])
+    ->name('secretary.students.search');
 
 /*
 |--------------------------------------------------------------------------

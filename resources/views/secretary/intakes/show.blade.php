@@ -104,39 +104,40 @@ $paymentsThisMonthCount = $paymentsThisMonth->count();
           </div>
         </div>
       </div>
-{{-- Totals by currency (all-time) --}}
-<div class="mb-3 section-card">
-  <h5 class="collected-heading">Collected (All-time) by Currency</h5>
 
-  @if($paymentsByCurrency->isEmpty())
-    <div class="text-muted">No payments recorded for this intake yet.</div>
-  @else
-    <div class="badge-row">
-      @foreach($paymentsByCurrency as $currency => $amount)
-        <div class="currency-badge">
-          <strong>{{ $currency }}</strong>&nbsp; {{ number_format($amount, 2) }}
-        </div>
-      @endforeach
-    </div>
-  @endif
-</div>
+      {{-- Totals by currency (all-time) --}}
+      <div class="mb-3 section-card">
+        <h5 class="collected-heading">Collected (All-time) by Currency</h5>
 
-{{-- Totals by currency (this month) --}}
-<div class="mb-3 section-card">
-  <h6 class="collected-heading">Collected ({{ now()->format('F Y') }}) by Currency</h6>
+        @if($paymentsByCurrency->isEmpty())
+          <div class="text-muted">No payments recorded for this intake yet.</div>
+        @else
+          <div class="badge-row">
+            @foreach($paymentsByCurrency as $currency => $amount)
+              <div class="currency-badge">
+                <strong>{{ $currency }}</strong>&nbsp; {{ number_format($amount, 2) }}
+              </div>
+            @endforeach
+          </div>
+        @endif
+      </div>
 
-  @if($paymentsThisMonthByCurrency->isEmpty())
-    <div class="text-muted">No payments this month.</div>
-  @else
-    <div class="badge-row">
-      @foreach($paymentsThisMonthByCurrency as $currency => $amount)
-        <div class="currency-badge">
-          <strong>{{ $currency }}</strong>&nbsp; {{ number_format($amount, 2) }}
-        </div>
-      @endforeach
-    </div>
-  @endif
-</div>
+      {{-- Totals by currency (this month) --}}
+      <div class="mb-3 section-card">
+        <h6 class="collected-heading">Collected ({{ now()->format('F Y') }}) by Currency</h6>
+
+        @if($paymentsThisMonthByCurrency->isEmpty())
+          <div class="text-muted">No payments this month.</div>
+        @else
+          <div class="badge-row">
+            @foreach($paymentsThisMonthByCurrency as $currency => $amount)
+              <div class="currency-badge">
+                <strong>{{ $currency }}</strong>&nbsp; {{ number_format($amount, 2) }}
+              </div>
+            @endforeach
+          </div>
+        @endif
+      </div>
 
       <hr>
 
@@ -159,6 +160,22 @@ $paymentsThisMonthCount = $paymentsThisMonth->count();
                 $studentByCurrency = $studentPayments
                     ->groupBy(fn($p) => strtoupper($p->currency ?? 'UGX'))
                     ->map(fn($g) => $g->sum(fn($p) => (float) $p->amount));
+
+                // Build phone display: prefer accessor phone_full, otherwise compose from parts
+                $phoneDisplay = $student->phone_full ?? null;
+                if (empty($phoneDisplay)) {
+                    $cc = $student->phone_country_code ?? $student->phone_dial ?? null;
+                    $num = $student->phone ?? null;
+                    if ($cc && $num) {
+                        $phoneDisplay = trim($cc . ' ' . $num);
+                    } elseif ($num) {
+                        $phoneDisplay = $num;
+                    } else {
+                        $phoneDisplay = null;
+                    }
+                }
+                // Normalize tel value (remove spaces, parentheses, dashes)
+                $phoneTel = $phoneDisplay ? preg_replace('/[^\d\+]/', '', $phoneDisplay) : null;
               @endphp
               <tr>
                 <td>
@@ -170,7 +187,13 @@ $paymentsThisMonthCount = $paymentsThisMonth->count();
                   @endif
                 </td>
 
-                <td>{{ $student->phone ?? '—' }}</td>
+                <td>
+                  @if($phoneDisplay)
+                    <a href="tel:{{ $phoneTel }}">{{ $phoneDisplay }}</a>
+                  @else
+                    — 
+                  @endif
+                </td>
 
                 <td class="text-center">
                   {{ $student->created_at ? $student->created_at->format('d M Y') : '—' }}
@@ -187,7 +210,7 @@ $paymentsThisMonthCount = $paymentsThisMonth->count();
                 </td>
 
                 <td class="text-end">
-                  <a href="{{ route('secretary.payments.create', $student) }}" class="btn btn-sm btn-outline-primary me-1">Add Payment</a>
+                  <a href="{{ route('secretary.payments.create', ['student' => $student->id]) }}" class="btn btn-sm btn-outline-primary me-1">Add Payment</a>
                   <a href="{{ route('secretary.students.show', $student) }}" class="btn btn-sm btn-outline-secondary">View</a>
                 </td>
               </tr>

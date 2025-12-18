@@ -29,8 +29,9 @@ class DashboardController extends Controller
             : now()->endOfMonth();
 
         // Helper to convert currency amounts to UGX
-        $toUgx = function (string $currency, float $amount) use ($rates): float {
-            return strtoupper($currency) === 'USD' ? $rates->usdToUgx($amount) : $amount;
+        $toUgx = function (?string $currency, float $amount) use ($rates): float {
+            $currency = strtoupper((string) $currency ?: 'UGX');
+            return $currency === 'USD' ? $rates->usdToUgx($amount) : $amount;
         };
 
         /** -----------------------------
@@ -43,9 +44,10 @@ class DashboardController extends Controller
         $students = $studentsQuery->get();
         $studentCount = $students->count();
 
+        // Sum course_fee grouped by currency (students may have course_fee in different currencies)
         $expectedByCurrency = $students
             ->groupBy(fn ($s) => strtoupper($s->currency ?? 'UGX'))
-            ->map(fn ($group) => $group->sum('course_fee'))
+            ->map(fn ($group) => $group->sum(fn ($s) => (float) ($s->course_fee ?? 0)))
             ->toArray();
 
         $expectedUGXAll = 0.0;
@@ -54,14 +56,15 @@ class DashboardController extends Controller
         }
 
         /** -----------------------------
-         * Payments
+         * Payments (build queries first, then get collections)
          * ----------------------------- */
-        $paymentsBase = Payment::query();
+        $paymentsBaseQuery = Payment::query();
         if ($intakeId) {
-            $paymentsBase->where('intake_id', $intakeId);
+            $paymentsBaseQuery->where('intake_id', $intakeId);
         }
 
-        $paymentsPeriod = (clone $paymentsBase)
+        // Build the period query (do NOT call get() yet if we need to reuse the query)
+        $paymentsPeriodQuery = (clone $paymentsBaseQuery)
             ->where(function ($q) use ($start, $end) {
                 $q->whereBetween('paid_at', [$start, $end])
                   ->orWhere(function ($q2) use ($start, $end) {
@@ -69,17 +72,23 @@ class DashboardController extends Controller
                   });
             });
 
-        $paymentsByCurrency = $paymentsPeriod
-            ->selectRaw('currency, SUM(COALESCE(amount,0)) as total')
-            ->groupBy('currency')
-            ->pluck('total', 'currency')
-            ->toArray();
+        // Now fetch collections for calculations
+        $paymentsPeriod = $paymentsPeriodQuery->get();
+        $paymentsAll = (clone $paymentsBaseQuery)->get();
 
-        $paymentsAllByCurrency = (clone $paymentsBase)
-            ->selectRaw('currency, SUM(COALESCE(amount,0)) as total')
-            ->groupBy('currency')
-            ->pluck('total', 'currency')
-            ->toArray();
+        // Compute collected sums by currency (period)
+        $paymentsByCurrency = [];
+        foreach ($paymentsPeriod as $p) {
+            $cur = strtoupper($p->currency ?? 'UGX');
+            $paymentsByCurrency[$cur] = ($paymentsByCurrency[$cur] ?? 0) + ((float) ($p->amount ?? 0));
+        }
+
+        // Compute collected sums by currency (all)
+        $paymentsAllByCurrency = [];
+        foreach ($paymentsAll as $p) {
+            $cur = strtoupper($p->currency ?? 'UGX');
+            $paymentsAllByCurrency[$cur] = ($paymentsAllByCurrency[$cur] ?? 0) + ((float) ($p->amount ?? 0));
+        }
 
         $collectedUGXMonth = 0.0;
         foreach ($paymentsByCurrency as $currency => $total) {
@@ -118,6 +127,12 @@ class DashboardController extends Controller
             : 0.0;
         $collectedPctMonth = min(100.0, max(0.0, $collectedPctMonth));
 
+        // All-time collected percentage against expected (guard divide-by-zero)
+        $collectedPctAll = 0.0;
+        if (!empty($expectedUGXAll) && $expectedUGXAll > 0) {
+            $collectedPctAll = round(min(100, ($collectedUGXAll / $expectedUGXAll) * 100), 2);
+        }
+
         /** -----------------------------
          * Balances
          * ----------------------------- */
@@ -128,6 +143,9 @@ class DashboardController extends Controller
         $totalReceiptsUGXAll = $collectedUGXAll;
         $totalExpensesUGXAll = $totalExpensesAll;
         $currentBalanceUGXAll = $totalReceiptsUGXAll - $totalExpensesUGXAll;
+
+        // Receipts minus expenses (all time)
+        $receiptsMinusExpensesAll = $totalReceiptsUGXAll - $totalExpensesUGXAll;
 
         $rateUGXPerUSD = $rates->usdToUgx(1);
         $currentBalanceUSDMonth = $rateUGXPerUSD > 0 ? $currentBalanceUGXMonth / $rateUGXPerUSD : 0.0;
@@ -142,14 +160,57 @@ class DashboardController extends Controller
             ->get();
 
         $activeIntakes->each(function ($intake) {
-            $expected  = $intake->students->sum('course_fee');
-            $collected = $intake->payments->sum('amount');
+            $expected  = $intake->students->sum(fn ($s) => (float) ($s->course_fee ?? 0));
+            $collected = $intake->payments->sum(fn ($p) => (float) ($p->amount ?? 0));
             $intake->paid_pct   = $expected > 0 ? round(($collected / $expected) * 100, 2) : 0;
             $intake->outstanding = max(0, $expected - $collected);
         });
 
         $activeIntake = $activeIntakes->first(); // null if none
         $activeIntakeCount = $activeIntake ? ($activeIntake->students_count ?? $activeIntake->students()->count()) : 0;
+
+        /** -----------------------------
+         * Recent payments (use the query builder, not a collection)
+         * ----------------------------- */
+        $recentPaymentsRaw = $paymentsPeriodQuery
+            ->with('student')
+            ->orderByDesc('paid_at')
+            ->orderByDesc('created_at')
+            ->limit(8)
+            ->get();
+
+        $recentPayments = $recentPaymentsRaw->map(function ($p) {
+            // prefer amount_converted if present (already converted to UGX)
+            $amount = null;
+            $currency = strtoupper($p->currency ?? 'UGX');
+
+            if (!is_null($p->amount_converted) && is_numeric($p->amount_converted)) {
+                $amount = (float) $p->amount_converted;
+                $currency = 'UGX';
+            } elseif (is_numeric($p->amount)) {
+                $amount = (float) $p->amount;
+            } else {
+                $amount = 0.0;
+            }
+
+            try {
+                $paidAt = $p->paid_at ? Carbon::parse($p->paid_at) : null;
+            } catch (\Throwable $e) {
+                $paidAt = null;
+            }
+
+            return (object) [
+                'id' => $p->id,
+                'student' => $p->student,
+                'reference' => $p->reference,
+                'note' => $p->note,
+                'method' => $p->method,
+                'amount' => $amount,
+                'currency' => $currency,
+                'paid_at' => $paidAt,
+                'created_at' => $p->created_at,
+            ];
+        });
 
         /** -----------------------------
          * Compatibility aliases for blades
@@ -161,16 +222,6 @@ class DashboardController extends Controller
 
         $intakes = Intake::withCount('students')->get();
 
-        $recentPayments = (clone $paymentsPeriod)
-            ->with('student')
-            ->orderByDesc('paid_at')
-            ->orderByDesc('created_at')
-            ->limit(8)
-            ->get();
-
-        /** -----------------------------
-         * Return view
-         * ----------------------------- */
         return view('secretary.dashboard', compact(
             'expectedUGXMonth',
             'collectedUGXMonth',
@@ -182,6 +233,7 @@ class DashboardController extends Controller
             'expensesThisMonthCount',
             'expectedUGXAll',
             'collectedUGXAll',
+            'collectedPctAll',
             'totalExpensesAll',
             'totalReceiptsUGXMonth',
             'totalExpensesUGXMonth',
@@ -191,6 +243,7 @@ class DashboardController extends Controller
             'totalExpensesUGXAll',
             'currentBalanceUGXAll',
             'currentBalanceUSDAll',
+            'receiptsMinusExpensesAll',
             'studentCount',
             'activeIntakes',
             'activeIntake',
