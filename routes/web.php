@@ -17,6 +17,7 @@ use App\Http\Controllers\Secretary\DashboardController as SecretaryDashboardCont
 use App\Http\Controllers\Secretary\StudentController;
 use App\Http\Controllers\Secretary\IntakeController;
 use App\Http\Controllers\Secretary\PaymentController;
+
 use App\Http\Controllers\Secretary\ExpenseController;
 
 /*

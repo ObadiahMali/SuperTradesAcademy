@@ -1,26 +1,30 @@
+# ----------------------------
 # Stage 1: Build frontend assets with Node
+# ----------------------------
 FROM node:22-alpine AS node-build
 WORKDIR /app
 
-# Install Node dependencies
+# Copy Node dependency files and install
 COPY package*.json ./
-RUN npm install
+RUN npm install --production
+
+# Copy source files and build frontend
 COPY . .
 RUN npm run build
 
-# Stage 2: PHP + Composer for Laravel
+# ----------------------------
+# Stage 2: PHP + Laravel
+# ----------------------------
 FROM php:8.2-cli-alpine
 
-# Install system dependencies
+# Install system dependencies and PHP extensions
 RUN apk add --no-cache \
     bash git curl zip unzip \
     libpng-dev libjpeg-turbo-dev freetype-dev \
     oniguruma-dev libxml2-dev sqlite sqlite-dev \
     mariadb-connector-c-dev \
-    composer
-
-# Install PHP extensions required by Laravel
-RUN docker-php-ext-install pdo pdo_mysql mbstring bcmath gd
+    composer && \
+    docker-php-ext-install pdo pdo_mysql mbstring bcmath gd
 
 WORKDIR /var/www/html
 
@@ -34,10 +38,18 @@ COPY --from=node-build /app/public/build ./public/build
 RUN composer install --no-dev --optimize-autoloader --no-interaction --prefer-dist
 
 # Cache Laravel config/routes/views
-RUN php artisan config:cache && php artisan route:cache && php artisan view:cache
+RUN php artisan config:cache \
+    && php artisan route:cache \
+    && php artisan view:cache
 
-# Expose port for Render
+# ----------------------------
+# Entrypoint Script for DB migrations and seeders
+# ----------------------------
+COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
+RUN chmod +x /usr/local/bin/docker-entrypoint.sh
+
+# Expose Laravel port
 EXPOSE 8000
 
-# Start Laravel using Artisan
-CMD php artisan serve --host 0.0.0.0 --port $PORT
+# Run entrypoint script
+ENTRYPOINT ["docker-entrypoint.sh"]
