@@ -167,7 +167,7 @@ class DashboardController extends Controller
         });
 
         $activeIntake = $activeIntakes->first(); // null if none
-        $activeIntakeCount = $activeIntake ? ($activeIntake->students_count ?? $activeIntake->students()->count()) : 0;
+       $activeIntakeCount = Intake::where('active', true)->count();
 
         /** -----------------------------
          * Recent payments (use the query builder, not a collection)

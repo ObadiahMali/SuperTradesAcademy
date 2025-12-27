@@ -9,9 +9,17 @@
     <!-- Fonts -->
     <link rel="preconnect" href="https://fonts.bunny.net" />
     <link href="https://fonts.bunny.net/css?family=instrument-sans:400,500,600" rel="stylesheet" />
+     <!-- Favicon -->
+    <link rel="icon" href="{{ asset('favicon.ico') }}" type="image/x-icon">
+    <link rel="shortcut icon" href="{{ asset('images/logo2.jfif') }}"  type="image/x-icon">
+    <link rel="icon" href="{{ asset('images/logo2.jfif') }}"  sizes="32x32" type="image/png">
+    <link rel="icon" href=""{{ asset('images/logo2.jfif') }}"  sizes="16x16" type="image/png">
+    <link rel="apple-touch-icon" href="{{ asset('apple-touch-icon.png') }}" sizes="180x180">
 
     <!-- Styles / Scripts -->
     @vite(['resources/css/app.css', 'resources/js/app.js'])
+
+    
 </head>
 <body class="antialiased bg-slate-50 font-sans text-slate-800">
   <div class="min-h-screen flex items-center justify-center px-4 py-12">
@@ -55,9 +63,9 @@
           </ul>
         </div>
 
-        <div class="mt-auto text-sm text-slate-300">
+        {{-- <div class="mt-auto text-sm text-slate-300">
           <p>Need help? Contact support at <a href="mailto:support@supertrades.academy" class="underline text-slate-100">support@supertrades.academy</a></p>
-        </div>
+        </div> --}}
       </div>
 
       <!-- Right: Auth card -->

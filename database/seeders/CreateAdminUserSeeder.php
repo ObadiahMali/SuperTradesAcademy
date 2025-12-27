@@ -22,7 +22,7 @@ class CreateAdminUserSeeder extends Seeder
             ]
         );
 
-        $role = Role::firstOrCreate(['name' => 'adminstrator']);
+        $role = Role::firstOrCreate(['name' => 'administrator']);
         $user->assignRole($role);
     }
 }

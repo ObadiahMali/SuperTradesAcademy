@@ -17,34 +17,45 @@
 
   <div class="card">
     <div class="card-body p-0">
-      <table class="table mb-0">
-        <thead>
-          <tr>
-            <th>Key</th>
-            <th>Label</th>
-            <th class="text-end">Price</th>
-            <th>Currency</th>
-            <th></th>
-          </tr>
-        </thead>
-        <tbody>
-          @foreach($plans as $plan)
+      <div class="table-responsive">
+        <table class="table mb-0">
+          <thead>
             <tr>
-              <td class="align-middle">{{ $plan->key }}</td>
-              <td class="align-middle">{{ $plan->label }}</td>
-              <td class="align-middle text-end"> {{ number_format($plan->price,2) }}</td>
-              <td class="align-middle">{{ $plan->currency }}</td>
-              <td class="align-middle text-end">
-                <a href="{{ route('admin.plans.edit', $plan) }}" class="btn btn-sm btn-primary">Edit</a>
-              </td>
+              <th>Key</th>
+              <th>Label</th>
+              <th class="text-end">Price</th>
+              <th>Currency</th>
+              <th></th>
             </tr>
-          @endforeach
-          @if($plans->isEmpty())
-            <tr><td colspan="5" class="text-muted p-3">No plans found</td></tr>
-          @endif
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            @forelse($plans as $plan)
+              <tr>
+                <td class="align-middle">{{ $plan->key }}</td>
+                <td class="align-middle">{{ $plan->label }}</td>
+                <td class="align-middle text-end">{{ number_format((float) $plan->price, 2) }}</td>
+                <td class="align-middle">{{ $plan->currency }}</td>
+                <td class="align-middle text-end">
+                  {{-- @can('manage-plans') --}}
+                    <a href="{{ route('admin.plans.edit', $plan) }}" class="btn btn-sm btn-primary">Edit</a>
+                  {{-- @endcan --}}
+                </td>
+              </tr>
+            @empty
+              <tr>
+                <td colspan="5" class="text-muted p-3">No plans found</td>
+              </tr>
+            @endforelse
+          </tbody>
+        </table>
+      </div>
     </div>
   </div>
+
+  @if(method_exists($plans, 'links'))
+    <div class="mt-3">
+      {{ $plans->links() }}
+    </div>
+  @endif
 </div>
 @endsection

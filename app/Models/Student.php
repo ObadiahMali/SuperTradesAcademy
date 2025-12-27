@@ -6,10 +6,12 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Contracts\Auth\CanResetPassword as CanResetPasswordContract;
+use Illuminate\Auth\Passwords\CanResetPassword;
 
-class Student extends Model
+class Student extends Model implements CanResetPasswordContract
 {
-    use HasFactory;
+    use HasFactory, CanResetPassword;
 
     /**
      * Mass assignable attributes.

@@ -1,14 +1,14 @@
-{{-- resources/views/admin/users/create.blade.php --}}
+{{-- resources/views/admin/users/edit.blade.php --}}
 @extends('layouts.app')
 
-@section('title', 'Create User')
+@section('title', 'Edit User')
 
 @section('content')
 <div class="container py-4">
     <div class="d-flex justify-content-between align-items-center mb-3">
         <div>
-            <h1 class="h4 mb-0">Create User</h1>
-            <small class="text-muted">Add an Administrator or Secretary</small>
+            <h1 class="h4 mb-0">Edit User</h1>
+            <small class="text-muted">Update administrator or secretary details</small>
         </div>
 
         <a href="{{ route('admin.users.index') }}" class="btn btn-outline-secondary">Back to list</a>
@@ -20,8 +20,9 @@
         </div>
     @endif
 
-    <form action="{{ route('admin.users.store') }}" method="POST" novalidate>
+    <form action="{{ route('admin.users.update', $user) }}" method="POST" novalidate>
         @csrf
+        @method('PUT')
 
         <div class="card mb-3">
             <div class="card-body">
@@ -30,7 +31,7 @@
                         <label for="name" class="form-label">Name</label>
                         <input id="name" name="name" type="text" autofocus
                                class="form-control @error('name') is-invalid @enderror"
-                               value="{{ old('name') }}" required>
+                               value="{{ old('name', $user->name) }}" required>
                         @error('name') <div class="invalid-feedback">{{ $message }}</div> @enderror
                     </div>
 
@@ -38,7 +39,7 @@
                         <label for="email" class="form-label">Email</label>
                         <input id="email" name="email" type="email"
                                class="form-control @error('email') is-invalid @enderror"
-                               value="{{ old('email') }}" required>
+                               value="{{ old('email', $user->email) }}" required>
                         @error('email') <div class="invalid-feedback">{{ $message }}</div> @enderror
                     </div>
 
@@ -52,7 +53,7 @@
                         @endphp
                         <select id="role" name="role" class="form-select @error('role') is-invalid @enderror" required>
                             @foreach($roles as $key => $label)
-                                <option value="{{ $key }}" {{ old('role', 'secretary') === $key ? 'selected' : '' }}>
+                                <option value="{{ $key }}" {{ old('role', $user->role) === $key ? 'selected' : '' }}>
                                     {{ $label }}
                                 </option>
                             @endforeach
@@ -61,10 +62,9 @@
                     </div>
 
                     <div class="col-md-6">
-                        <label for="password" class="form-label">Password (optional)</label>
+                        <label for="password" class="form-label">Password (leave blank to keep current)</label>
                         <input id="password" name="password" type="password"
                                class="form-control @error('password') is-invalid @enderror" autocomplete="new-password">
-                        <div class="form-text">Leave blank to auto-generate a secure password.</div>
                         @error('password') <div class="invalid-feedback">{{ $message }}</div> @enderror
                     </div>
 
@@ -75,13 +75,18 @@
                         @error('password_confirmation') <div class="invalid-feedback">{{ $message }}</div> @enderror
                     </div>
 
-                    {{-- Removed send_invite checkbox: invites will be sent automatically --}}
+                    <div class="col-12">
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" name="send_invite" id="sendInvite" value="1" {{ old('send_invite') ? 'checked' : '' }}>
+                            <label class="form-check-label" for="sendInvite">Send credentials by email</label>
+                        </div>
+                    </div>
                 </div>
             </div>
         </div>
 
         <div class="d-flex gap-2">
-            <button class="btn btn-primary">Create user</button>
+            <button class="btn btn-primary">Save changes</button>
             <a href="{{ route('admin.users.index') }}" class="btn btn-outline-secondary">Cancel</a>
         </div>
     </form>

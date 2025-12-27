@@ -69,7 +69,7 @@
 
 <div class="row g-3 mb-3">
   <div class="col-md-3">
-    <div class="card dashboard-card small-card">
+    <div class="card dashboard-card small-card">  
       <div class="d-flex justify-content-between">
         <div>
           <div class="metric-title">Active Intakes</div>
@@ -171,7 +171,7 @@
       </div>
     </div>
 
-  <div class="expected-grid">
+<div class="expected-grid">
   <div class="expected-item">
     <div class="expected-label">Expected (UGX)</div>
     <div class="expected-value">UGX {{ number_format((float) ($expectedUGXAll ?? $expectedUGX ?? 0), 2) }}</div>

@@ -4,18 +4,22 @@ namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
 use App\Http\Requests\StoreAdminUserRequest;
+use App\Mail\WelcomeSetPassword;
 use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Str;
 use Illuminate\Support\Facades\Mail;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Password;
 
 class UserController extends Controller
 {
     public function __construct()
     {
-        // Ensure only authorized admins can manage users
-        $this->middleware(['auth', 'can:manage-users']);
+        // Require authentication for all actions in this controller
+        $this->middleware('auth');
     }
 
     /**
@@ -46,7 +50,6 @@ class UserController extends Controller
         $roles = [
             'administrator' => 'Administrator',
             'secretary' => 'Secretary',
-            'staff' => 'Staff',
         ];
 
         return view('admin.users.create', compact('roles'));
@@ -55,36 +58,50 @@ class UserController extends Controller
     /**
      * Store a newly created user.
      */
-    public function store(StoreAdminUserRequest $request)
-    {
-        $data = $request->validated();
+   public function store(StoreAdminUserRequest $request)
+{
+    $data = $request->validated();
 
-        // Generate a secure password if none provided
-        $passwordPlain = $data['password'] ?? Str::random(12);
-        $passwordHash = Hash::make($passwordPlain);
+    // If admin didn't provide a password, generate a secure one
+    $passwordPlain = !empty($data['password']) ? $data['password'] : Str::random(12);
+    $passwordHash  = Hash::make($passwordPlain);
+    $role          = $data['role'] ?? 'secretary';
 
-        $user = User::create([
-            'name' => $data['name'],
-            'email' => $data['email'],
-            'password' => $passwordHash,
-            'role' => $data['role'] ?? 'staff',
-            'is_active' => $data['is_active'] ?? true,
-        ]);
+    DB::beginTransaction();
 
-        // Optionally send a welcome email with credentials if requested
-        if (!empty($data['send_invite'])) {
-            try {
-                // Implement App\Mail\AdminCreatedUser mailable if you want to send credentials
-                Mail::to($user->email)->send(new \App\Mail\AdminCreatedUser($user, $passwordPlain));
-            } catch (\Throwable $e) {
-                // Log or ignore; do not expose mail errors to the user
-                \Log::warning('Failed to send admin created email: ' . $e->getMessage());
-            }
+    try {
+        // Create and persist user
+        $user = new User();
+        $user->name     = $data['name'];
+        $user->email    = $data['email'];
+        $user->password = $passwordHash;
+        $user->role     = $role;
+        $user->save();
+
+        // Always send a branded password set (invite) email
+        try {
+            // Create a password reset token using the broker
+            $token = Password::broker()->createToken($user);
+
+            // Send the branded mailable with the token (uses the password.reset route)
+            Mail::to($user->email)->send(new WelcomeSetPassword($user, $token));
+
+            Log::info("Invite email sent to user_id={$user->id}, email={$user->email}");
+        } catch (\Throwable $e) {
+            // Log but don't fail the whole transaction for email issues
+            Log::warning("Password invite failed for user_id={$user->id}: " . $e->getMessage());
         }
 
-        return redirect()->route('admin.users.index')
-            ->with('success', 'User created successfully.');
+        DB::commit();
+
+        return redirect()->route('admin.users.index')->with('success', 'User created successfully.');
+    } catch (\Throwable $e) {
+        DB::rollBack();
+        Log::error('Failed to create user: ' . $e->getMessage());
+        return redirect()->back()->withInput()->with('error', 'Failed to create user.');
     }
+}
+
 
     /**
      * Show a single user.
@@ -102,7 +119,6 @@ class UserController extends Controller
         $roles = [
             'administrator' => 'Administrator',
             'secretary' => 'Secretary',
-            'staff' => 'Staff',
         ];
 
         return view('admin.users.edit', compact('user', 'roles'));
@@ -118,7 +134,6 @@ class UserController extends Controller
         $user->name = $data['name'];
         $user->email = $data['email'];
         $user->role = $data['role'] ?? $user->role;
-        $user->is_active = $data['is_active'] ?? $user->is_active;
 
         if (!empty($data['password'])) {
             $user->password = Hash::make($data['password']);
@@ -134,21 +149,18 @@ class UserController extends Controller
      */
     public function destroy(User $user)
     {
-        // Prevent deleting self
-        if ($this->request()->user()->id === $user->id) {
+        $currentUserId = auth()->id();
+
+        if ($currentUserId && $currentUserId === $user->id) {
             return redirect()->back()->with('error', 'You cannot delete your own account.');
         }
 
-        $user->delete();
-
-        return redirect()->route('admin.users.index')->with('success', 'User deleted.');
-    }
-
-    /**
-     * Helper to access the current request inside controller methods where needed.
-     */
-    protected function request(): Request
-    {
-        return app(Request::class);
+        try {
+            $user->delete();
+            return redirect()->route('admin.users.index')->with('success', 'User deleted.');
+        } catch (\Throwable $e) {
+            Log::error('Failed to delete user: ' . $e->getMessage());
+            return redirect()->back()->with('error', 'Failed to delete user. Please check logs.');
+        }
     }
 }

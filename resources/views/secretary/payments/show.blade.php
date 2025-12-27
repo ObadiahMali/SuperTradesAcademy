@@ -11,11 +11,11 @@
     </div>
     <div>
       <a href="{{ route('secretary.payments.index') }}" class="btn btn-outline-secondary btn-sm">Back</a>
-      <a href="{{ route('secretary.payments.edit', $payment) }}" class="btn btn-sm btn-outline-primary">Edit</a>
+      {{-- <a href="{{ route('secretary.payments.edit', $payment) }}" class="btn btn-sm btn-outline-primary">Edit</a> --}}
       <form action="{{ route('secretary.payments.destroy', $payment) }}" method="POST" class="d-inline">
         @csrf
         @method('DELETE')
-        <button class="btn btn-sm btn-danger" onclick="return confirm('Delete this payment?')">Delete</button>
+        {{-- <button class="btn btn-sm btn-danger" onclick="return confirm('Delete this payment?')">Delete</button> --}}
       </form>
     </div>
   </div>

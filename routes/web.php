@@ -1,11 +1,18 @@
 <?php
 
 use Illuminate\Support\Facades\Route;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Mail;
+
 use App\Http\Controllers\ProfileController;
+use App\Models\Student;
+use App\Mail\WelcomeUserMail;
 
 /*
- * Secretary Controllers
- */
+|--------------------------------------------------------------------------
+| Secretary Controllers
+|--------------------------------------------------------------------------
+*/
 use App\Http\Controllers\Secretary\DashboardController as SecretaryDashboardController;
 use App\Http\Controllers\Secretary\StudentController;
 use App\Http\Controllers\Secretary\IntakeController;
@@ -13,45 +20,54 @@ use App\Http\Controllers\Secretary\PaymentController;
 use App\Http\Controllers\Secretary\ExpenseController;
 
 /*
- * Administrator Controllers
- */
+|--------------------------------------------------------------------------
+| Administrator Controllers
+|--------------------------------------------------------------------------
+*/
 use App\Http\Controllers\Admin\AdminDashboardController;
 use App\Http\Controllers\Admin\EmployeeController;
 use App\Http\Controllers\Admin\ReportController;
+use App\Http\Controllers\Admin\UserController;
+use App\Http\Controllers\Admin\PlanController;
 
 /*
 |--------------------------------------------------------------------------
 | Public Routes
 |--------------------------------------------------------------------------
 */
-Route::get('/', function () {
-    return view('welcome');
-});
+Route::get('/', fn () => view('welcome'));
 
 /*
 |--------------------------------------------------------------------------
-| Role-Redirect Dashboard
+| Role-based Dashboard Redirect
 |--------------------------------------------------------------------------
 */
 Route::get('/dashboard', function () {
-    if (! auth()->check()) {
+    $user = auth()->user();
+
+    if (! $user) {
         return redirect()->route('login');
     }
 
-    if (auth()->user()->hasRole('administrator')) {
-        return redirect()->route('admin.dashboard');
-    }
+    $role = strtolower(trim((string) $user->role));
 
-    if (auth()->user()->hasRole('secretary')) {
-        return redirect()->route('secretary.dashboard');
-    }
-
-    abort(403, 'No dashboard available for your role.');
-})->middleware(['auth'])->name('dashboard');
+    return match ($role) {
+        'administrator' => redirect()->route('admin.dashboard'),
+        'secretary'     => redirect()->route('secretary.dashboard'),
+        default         => tap(
+            redirect()->route('admin.users.index')
+                ->with('info', 'No dashboard for your role. Redirected to users list.'),
+            fn () => Log::warning('Unknown role on dashboard redirect', [
+                'user_id' => $user->id,
+                'role' => $user->role,
+            ])
+        ),
+    };
+})->middleware('auth')->name('dashboard');
 
 /*
 |--------------------------------------------------------------------------
-| Profile (Laravel Breeze)
+| Profile (Breeze)
 |--------------------------------------------------------------------------
 */
 Route::middleware('auth')->group(function () {
@@ -67,96 +83,112 @@ Route::middleware('auth')->group(function () {
 */
 Route::prefix('secretary')
     ->name('secretary.')
-    ->middleware(['auth'])
+    ->middleware('auth')
     ->group(function () {
 
-        // Dashboard
-        Route::get('/dashboard', [SecretaryDashboardController::class, 'index'])->name('dashboard');
+        Route::get('/dashboard', [SecretaryDashboardController::class, 'index'])
+            ->name('dashboard');
 
-        // Resource controllers
         Route::resource('students', StudentController::class);
         Route::resource('intakes', IntakeController::class);
         Route::resource('payments', PaymentController::class);
         Route::resource('expenses', ExpenseController::class);
 
-        // Extra action routes
-        Route::patch('expenses/{expense}/toggle-paid', [ExpenseController::class, 'togglePaid'])
-            ->name('expenses.togglePaid');
+        Route::patch('expenses/{expense}/toggle-paid',
+            [ExpenseController::class, 'togglePaid']
+        )->name('expenses.togglePaid');
 
-        // Payment receipt routes (payment-level receipts)
-        // Simple alias name: secretary.payments.receipt
-        Route::get('payments/{payment}/receipt', [PaymentController::class, 'receiptForPayment'])
-            ->name('payments.receipt');
+        Route::get('payments/{payment}/receipt',
+            [PaymentController::class, 'receiptForPayment']
+        )->name('payments.receipt');
 
-        // PDF version
-        Route::get('payments/{payment}/receipt/pdf', [PaymentController::class, 'receiptPdf'])
-            ->name('payments.receipt.pdf');
+        Route::get('payments/{payment}/receipt/pdf',
+            [PaymentController::class, 'receiptPdf']
+        )->name('payments.receipt.pdf');
 
-        // Verify email
-        Route::get('students/verify-email', [StudentController::class, 'verifyEmail'])
-            ->name('students.verifyEmail');
+        Route::get('students/verify-email',
+            [StudentController::class, 'verifyEmail']
+        )->name('students.verifyEmail');
     });
 
-
+    
 
 /*
 |--------------------------------------------------------------------------
-| Administrator Routes
+| Administrator Routes (FULLY PROTECTED)
 |--------------------------------------------------------------------------
-|
-| Register explicit admin report routes first to avoid being captured by
-| resource/wildcard routes.
 */
 Route::prefix('admin')
     ->name('admin.')
-    ->middleware(['auth'])
+    ->middleware(['auth', 'admin'])
     ->group(function () {
 
-        Route::get('/dashboard', [AdminDashboardController::class, 'index'])->name('dashboard');
+        Route::get('/dashboard', [AdminDashboardController::class, 'index'])
+            ->name('dashboard');
 
-        // Reports: explicit export and index routes first
-        Route::get('reports/export', [ReportController::class, 'export'])->name('reports.export');
-        Route::get('reports', [ReportController::class, 'index'])->name('reports.index');
+        Route::get('reports/export', [ReportController::class, 'export'])
+            ->name('reports.export');
 
-        // Resourceful routes
-        Route::resource('employees', EmployeeController::class);
+        Route::get('reports', [ReportController::class, 'index'])
+            ->name('reports.index');
+
         Route::resource('reports', ReportController::class)
-            ->except(['create', 'store', 'edit', 'update', 'index']); // index/export handled above
-             Route::get('users/create', [\App\Http\Controllers\Admin\UserController::class, 'create'])->name('users.create');
-    Route::post('users', [\App\Http\Controllers\Admin\UserController::class, 'store'])->name('users.store');
+            ->except(['create', 'store', 'edit', 'update', 'index']);
+
+        Route::resource('employees', EmployeeController::class);
+
+        /*
+         |--------------------------------------------------------------------------
+         | Users (ADMIN ONLY – single source of truth)
+         |--------------------------------------------------------------------------
+         */
+        Route::resource('users', UserController::class);
+
+        /*
+         |--------------------------------------------------------------------------
+         | Plans (controller enforces ability)
+         |--------------------------------------------------------------------------
+         */
+        Route::resource('plans', PlanController::class)
+            ->only(['index', 'edit', 'update']);
     });
 
-//     Route::middleware(['auth','is_admin'])->prefix('admin')->name('admin.')->group(function () {
-//     Route::get('users/create', [\App\Http\Controllers\Admin\UserController::class, 'create'])->name('users.create');
-//     Route::post('users', [\App\Http\Controllers\Admin\UserController::class, 'store'])->name('users.store');
-// });
-
 /*
 |--------------------------------------------------------------------------
-| Admin plans
+| Backwards-Compatible Secretary Endpoints
 |--------------------------------------------------------------------------
 */
-Route::resource('plans', \App\Http\Controllers\Admin\PlanController::class)
-    ->only(['index','edit','update'])
-    ->names([
-        'index' => 'admin.plans.index',
-        'edit'  => 'admin.plans.edit',
-        'update'=> 'admin.plans.update',
-    ]);
+Route::middleware('auth')->group(function () {
+    Route::get('secretary/students',
+        [StudentController::class, 'index']
+    )->name('secretary.students.index');
 
-
-
-    // paginated index (existing)
-Route::get('secretary/students', [\App\Http\Controllers\Secretary\StudentController::class, 'index'])
-    ->name('secretary.students.index');
-
-// AJAX search endpoint
-Route::get('secretary/students/search', [\App\Http\Controllers\Secretary\StudentController::class, 'search'])
-    ->name('secretary.students.search');
+    Route::get('secretary/students/search',
+        [StudentController::class, 'search']
+    )->name('secretary.students.search');
+});
 
 /*
 |--------------------------------------------------------------------------
-| Auth routes
+| Debug Mail (Auth Only)
+|--------------------------------------------------------------------------
+*/
+Route::get('/debug-mail/student/{id}', function ($id) {
+    $student = Student::findOrFail($id);
+
+    try {
+        Mail::to($student->email)->send(new WelcomeUserMail($student));
+        Log::info('Debug mail sent', ['student_id' => $student->id]);
+        return 'Debug mail sent';
+    } catch (\Throwable $e) {
+        Log::error('Debug mail failed', ['error' => $e->getMessage()]);
+        return 'Debug mail failed';
+    }
+})->middleware('auth');
+
+/*
+|--------------------------------------------------------------------------
+| Auth Routes
 |--------------------------------------------------------------------------
 */
 require __DIR__.'/auth.php';

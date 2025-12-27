@@ -1,29 +1,44 @@
 <?php
 
-namespace App\Providers;
+namespace App\Models;
 
-use Illuminate\Support\ServiceProvider;
-use Illuminate\Support\Facades\Gate;
+use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Foundation\Auth\User as Authenticatable;
+use Illuminate\Notifications\Notifiable;
 
-class AppServiceProvider extends ServiceProvider
+class User extends Authenticatable
 {
+    use HasFactory, Notifiable;
+
+    protected $fillable = [
+        'name',
+        'email',
+        'password',
+        'role',
+    ];
+
+    protected $hidden = [
+        'password',
+        'remember_token',
+    ];
+
+    protected $casts = [
+        'email_verified_at' => 'datetime',
+    ];
+
     /**
-     * Register any application services.
+     * Check if user has the given role name.
      */
-    public function register(): void
+    public function hasRole(string $role): bool
     {
-        //
+        return strtolower($this->role ?? '') === strtolower($role);
     }
 
-    
-
-public function boot(): void
-{
-    // Define custom gates here if you want,
-    // but do NOT call registerPolicies() in AppServiceProvider.
-    Gate::define('manage-plans', function ($user) {
-        return $user->hasRole('administrator'); // or your own logic
-    });
-}
-
+    /**
+     * Convenience: is administrator.
+     */
+    public function isAdmin(): bool
+    {
+        return $this->hasRole('administrator');
+    }
 }

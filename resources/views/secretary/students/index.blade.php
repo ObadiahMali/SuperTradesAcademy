@@ -37,43 +37,33 @@
     <h3 class="mb-0">Students</h3>
     <div class="page-sub">All registered students. Use the controls to search, filter and register new students.</div>
   </div>
+ <div class="controls d-flex align-items-center gap-2">
+  @if(!empty($activeIntake))
+    <a href="{{ route('secretary.students.create', ['intake' => $activeIntake->id]) }}" class="btn btn-primary compact-btn">
+      <i class="bi bi-person-plus me-1"></i> Register student
+    </a>
+  @else
+    <a href="{{ route('secretary.students.create') }}" class="btn btn-outline-primary compact-btn">
+      <i class="bi bi-person-plus me-1"></i> Register student
+    </a>
+  @endif
 
-  <div class="controls">
-    @if(!empty($activeIntake))
-      <a href="{{ route('secretary.students.create', ['intake' => $activeIntake->id]) }}" class="btn btn-primary compact-btn">
-        <i class="bi bi-person-plus me-1"></i> Register student
-      </a>
-    @else
-      <a href="{{ route('secretary.students.create') }}" class="btn btn-outline-primary compact-btn">
-        <i class="bi bi-person-plus me-1"></i> Register student
-      </a>
-    @endif
-
-   <form action="{{ route('secretary.students.index') }}" method="GET" class="d-flex align-items-center position-relative" autocomplete="off">
-  <input id="student-search" name="q" value="{{ request('q') }}" class="form-control form-control-sm search-input" placeholder="Search name, email or phone" />
-  <div id="student-suggestions" class="list-group position-absolute" style="z-index:1050; top:42px; left:0; right:0; display:none;"></div>
-</form>
-    <div class="dropdown">
-      <button class="btn btn-outline-secondary btn-sm compact-btn dropdown-toggle" data-bs-toggle="dropdown">Filter</button>
-      <div class="dropdown-menu dropdown-menu-end p-3" style="min-width:260px;">
-        <form action="{{ route('secretary.students.index') }}" method="GET">
-          <div class="mb-2">
-            <label class="form-label small mb-1">Intake</label>
-            <select name="intake_id" class="form-select form-select-sm">
-              <option value="">All</option>
-              @foreach($intakes ?? collect() as $i)
-                <option value="{{ $i->id }}" @selected(request('intake_id') == $i->id)>{{ $i->name }}</option>
-              @endforeach
-            </select>
-          </div>
-          <div class="d-flex gap-2">
-            <button type="submit" class="btn btn-primary btn-sm">Apply</button>
-            <a href="{{ route('secretary.students.index') }}" class="btn btn-outline-secondary btn-sm">Reset</a>
-          </div>
-        </form>
-      </div>
+  <form method="GET" action="{{ route('secretary.students.index') }}" class="row g-2 align-items-center mb-0">
+    <div class="col-auto">
+      <input name="q" value="{{ request('q') }}" class="form-control" placeholder="Search name, email or phone" autocomplete="off">
     </div>
-  </div>
+
+    <div class="col-auto d-flex gap-2">
+      <button class="btn btn-outline-secondary">Search</button>
+
+      {{-- Refresh: clears query and reloads the index --}}
+      <a href="{{ route('secretary.students.index') }}" class="btn btn-outline-secondary" title="Refresh list">
+        <i class="bi bi-arrow-clockwise me-1"></i> Refresh
+      </a>
+    </div>
+  </form>
+</div>
+
 </div>
 
 <div class="card card-clean">
@@ -183,26 +173,46 @@
               <div class="muted small">Balance</div>
             </td>
 
-            <td class="text-end">
-              <div class="actions-compact" role="group" aria-label="Actions for student {{ $student->id }}">
-                <a href="{{ route('secretary.students.show', $student->id) }}" class="btn btn-sm btn-outline-primary" title="View Student">
-                  <i class="bi bi-eye me-1"></i> View
-                </a>
-                <a href="{{ route('secretary.students.edit', $student->id) }}" class="btn btn-sm btn-outline-secondary" title="Edit Student">
-                  <i class="bi bi-pencil me-1"></i> Edit
-                </a>
-                <a href="{{ route('secretary.payments.create', ['student' => $student->id]) }}" class="btn btn-sm btn-success" title="Record Payment">
-                  <i class="bi bi-currency-dollar me-1"></i> Record Payment
-                </a>
-                <form action="{{ route('secretary.students.destroy', $student->id) }}" method="POST" class="d-inline-block" onsubmit="return confirm('Delete student?');">
-                  @csrf
-                  @method('DELETE')
-                  <button class="btn btn-sm btn-danger" title="Delete Student">
-                    <i class="bi bi-trash me-1"></i> Delete
-                  </button>
-                </form>
-              </div>
-            </td>
+         <td class="text-end">
+  <div class="actions-compact" role="group" aria-label="Actions for student {{ $student->id }}">
+    <a href="{{ route('secretary.students.show', $student->id) }}" class="btn btn-sm btn-outline-primary" title="View Student">
+      <i class="bi bi-eye me-1"></i> View
+    </a>
+
+    @php
+      $isAdmin = auth()->check() && (method_exists(auth()->user(), 'hasRole')
+        ? auth()->user()->hasRole('administrator')
+        : (auth()->user()->role === 'administrator'));
+    @endphp
+
+    @if($isAdmin)
+      <a href="{{ route('secretary.students.edit', $student->id) }}" class="btn btn-sm btn-outline-secondary" title="Edit Student">
+        <i class="bi bi-pencil me-1"></i> Edit
+      </a>
+
+      <form action="{{ route('secretary.students.destroy', $student->id) }}" method="POST" class="d-inline-block" onsubmit="return confirm('Delete student?');">
+        @csrf
+        @method('DELETE')
+        <button class="btn btn-sm btn-danger" title="Delete Student">
+          <i class="bi bi-trash me-1"></i> Delete
+        </button>
+      </form>
+    @else
+      <button type="button" class="btn btn-sm btn-outline-secondary disabled no-pointer" aria-disabled="true" title="Edit unavailable">
+        <i class="bi bi-pencil me-1"></i> Edit
+      </button>
+
+      <button type="button" class="btn btn-sm btn-danger disabled no-pointer" aria-disabled="true" title="Delete unavailable">
+        <i class="bi bi-trash me-1"></i> Delete
+      </button>
+    @endif
+
+    <a href="{{ route('secretary.payments.create', ['student' => $student->id]) }}" class="btn btn-sm btn-success" title="Record Payment">
+      <i class="bi bi-currency-dollar me-1"></i> Record Payment
+    </a>
+  </div>
+</td>
+
           </tr>
         @empty
           <tr>
@@ -213,12 +223,14 @@
     </table>
   </div>
 
-  <div class="d-flex justify-content-between align-items-center mt-3">
-    <div class="muted small">Showing page {{ $students->currentPage() ?? 1 }} of {{ $students->lastPage() ?? 1 }}</div>
-    <div>
-      {{ $students->withQueryString()->links() }}
-    </div>
+ <div class="d-flex justify-content-between align-items-center mt-3">
+  <div class="muted small">Showing page {{ $students->currentPage() }} of {{ $students->lastPage() }}</div>
+
+  <div class="mt-3">
+    {{ $students->withQueryString()->links('pagination::bootstrap-5') }}
   </div>
+</div>
+
 </div>
 
 

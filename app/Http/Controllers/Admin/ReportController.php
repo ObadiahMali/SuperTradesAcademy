@@ -17,7 +17,7 @@ class ReportController extends Controller
     }
 
     /**
-     * Show report form and results (if filters provided).
+     * Show report form and results (if filters provided). 
      *
      * Expected query params:
      *  - from (YYYY-MM-DD)

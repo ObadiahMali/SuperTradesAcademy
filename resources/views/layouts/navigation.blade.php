@@ -192,87 +192,95 @@
     </div>
 <nav class="nav flex-column" aria-label="Main">
     {{-- Secretary dashboard --}}
-    @role('secretary')
-        @if(Route::has('secretary.dashboard'))
-            <a href="{{ route('secretary.dashboard') }}"
-               class="nav-link {{ request()->routeIs('secretary.dashboard') ? 'active' : '' }}">
-                Dashboard
-            </a>
+    @auth
+        @if(auth()->user()->role === 'secretary' || (method_exists(auth()->user(), 'hasRole') && auth()->user()->hasRole('secretary')))
+            @if(Route::has('secretary.dashboard'))
+                <a href="{{ route('secretary.dashboard') }}"
+                   class="nav-link {{ request()->routeIs('secretary.dashboard') ? 'active' : '' }}">
+                    Dashboard
+                </a>
+            @endif
         @endif
-    @endrole
+    @endauth
 
     {{-- Administrator dashboard --}}
-    @role('administrator')
-        @if(Route::has('admin.dashboard'))
-            <a href="{{ route('admin.dashboard') }}"
-               class="nav-link {{ request()->routeIs('admin.dashboard') ? 'active' : '' }}">
-                Dashboard
-            </a>
+    @auth
+        @if(auth()->user()->role === 'administrator' || (method_exists(auth()->user(), 'hasRole') && auth()->user()->hasRole('administrator')))
+            @if(Route::has('admin.dashboard'))
+                <a href="{{ route('admin.dashboard') }}"
+                   class="nav-link {{ request()->routeIs('admin.dashboard') ? 'active' : '' }}">
+                    Dashboard
+                </a>
+            @endif
         @endif
-    @endrole
+    @endauth
 
     {{-- Shared secretary menu (visible to secretary AND administrator) --}}
-    @hasanyrole('secretary|administrator')
-        @if(Route::has('secretary.students.index'))
+    @auth
+        @php
+            $isSecretary = auth()->user()->role === 'secretary' || (method_exists(auth()->user(), 'hasRole') && auth()->user()->hasRole('secretary'));
+            $isAdmin     = auth()->user()->role === 'administrator' || (method_exists(auth()->user(), 'hasRole') && auth()->user()->hasRole('administrator'));
+        @endphp
+
+        @if(($isSecretary || $isAdmin) && Route::has('secretary.students.index'))
             <a href="{{ route('secretary.students.index') }}"
                class="nav-link {{ request()->routeIs('secretary.students.*') ? 'active' : '' }}">
                 Students
             </a>
         @endif
 
-        @if(Route::has('secretary.intakes.index'))
+        @if(($isSecretary || $isAdmin) && Route::has('secretary.intakes.index'))
             <a href="{{ route('secretary.intakes.index') }}"
                class="nav-link {{ request()->routeIs('secretary.intakes.*') ? 'active' : '' }}">
                 Intakes
             </a>
         @endif
 
-        @if(Route::has('secretary.payments.index'))
+        @if(($isSecretary || $isAdmin) && Route::has('secretary.payments.index'))
             <a href="{{ route('secretary.payments.index') }}"
                class="nav-link {{ request()->routeIs('secretary.payments.*') ? 'active' : '' }}">
                 Payments
             </a>
         @endif
 
-        @if(Route::has('secretary.expenses.index'))
+        @if(($isSecretary || $isAdmin) && Route::has('secretary.expenses.index'))
             <a href="{{ route('secretary.expenses.index') }}"
                class="nav-link {{ request()->routeIs('secretary.expenses.*') ? 'active' : '' }}">
                 Expenses
             </a>
         @endif
-    @endhasanyrole
+    @endauth
 
     {{-- Administrator-only extras --}}
-    @role('administrator')
-        @if(Route::has('admin.users.index'))
+    @auth
+        @if($isAdmin && Route::has('admin.users.index'))
             <a href="{{ route('admin.users.index') }}"
                class="nav-link {{ request()->routeIs('admin.users.*') ? 'active' : '' }}">
                 Users
             </a>
         @endif
 
-        @if(Route::has('admin.employees.index'))
+        @if($isAdmin && Route::has('admin.employees.index'))
             <a href="{{ route('admin.employees.index') }}"
                class="nav-link {{ request()->routeIs('admin.employees.*') ? 'active' : '' }}">
                 Employees
             </a>
         @endif
 
-        @if(Route::has('admin.reports.index'))
+        @if($isAdmin && Route::has('admin.reports.index'))
             <a href="{{ route('admin.reports.index') }}"
                class="nav-link {{ request()->routeIs('admin.reports.*') ? 'active' : '' }}">
                 Reports
             </a>
         @endif
 
-        {{-- Plans (admin only) --}}
-        @if(Route::has('admin.plans.index'))
+        @if($isAdmin && Route::has('admin.plans.index'))
             <a href="{{ route('admin.plans.index') }}"
                class="nav-link {{ request()->routeIs('admin.plans.*') ? 'active' : '' }}">
                 Plans
             </a>
         @endif
-    @endrole
+    @endauth
 </nav>
 
     <div class="sidebar-section" aria-hidden="false">

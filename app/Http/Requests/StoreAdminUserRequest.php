@@ -12,8 +12,22 @@ class StoreAdminUserRequest extends FormRequest
      */
     public function authorize(): bool
     {
-        // Only allow admins or users with permission
-        return $this->user() && $this->user()->can('manage-users');
+        $user = $this->user();
+
+        if (! $user) {
+            return false;
+        }
+
+        // Allow users with the manage-users permission or the two roles
+        if (method_exists($user, 'can') && $user->can('manage-users')) {
+            return true;
+        }
+
+        if (method_exists($user, 'hasRole')) {
+            return $user->hasRole('administrator') || $user->hasRole('secretary');
+        }
+
+        return in_array($user->role ?? '', ['administrator', 'secretary'], true);
     }
 
     /**
@@ -21,12 +35,18 @@ class StoreAdminUserRequest extends FormRequest
      */
     public function rules(): array
     {
+        $userId = $this->route('user')?->id;
+
         return [
             'name' => ['required', 'string', 'max:255'],
-            'email' => ['required', 'email', 'max:255', Rule::unique('users', 'email')],
-            'role' => ['nullable', 'string', 'max:50'],
+            'email' => [
+                'required',
+                'email',
+                'max:255',
+                Rule::unique('users', 'email')->ignore($userId),
+            ],
+            'role' => ['required', 'string', Rule::in(['administrator', 'secretary'])],
             'password' => ['nullable', 'string', 'min:8', 'confirmed'],
-            'is_active' => ['nullable', 'boolean'],
             'send_invite' => ['nullable', 'boolean'],
         ];
     }
@@ -39,21 +59,15 @@ class StoreAdminUserRequest extends FormRequest
         return [
             'email.unique' => 'A user with that email already exists.',
             'password.confirmed' => 'Password confirmation does not match.',
+            'role.in' => 'Role must be either Administrator or Secretary.',
         ];
     }
 
     /**
      * Prepare the data for validation.
-     * Normalize boolean-like inputs.
      */
     protected function prepareForValidation(): void
     {
-        if ($this->has('is_active')) {
-            $this->merge([
-                'is_active' => filter_var($this->input('is_active'), FILTER_VALIDATE_BOOLEAN),
-            ]);
-        }
-
         if ($this->has('send_invite')) {
             $this->merge([
                 'send_invite' => filter_var($this->input('send_invite'), FILTER_VALIDATE_BOOLEAN),

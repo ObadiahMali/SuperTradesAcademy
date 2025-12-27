@@ -211,10 +211,15 @@
     </table>
   </div>
 
-  <div class="d-flex justify-content-between align-items-center mt-3">
-    <div class="muted small">Showing page {{ $expenses->currentPage() }} of {{ $expenses->lastPage() }}</div>
-    <div>{{ $expenses->withQueryString()->links() }}</div>
-  </div>
+ <div class="d-flex justify-content-between align-items-center mt-3">
+    <div class="muted small">
+        Showing page {{ $expenses->currentPage() }} of {{ $expenses->lastPage() }}
+    </div>
+    <div>
+        {{ $expenses->withQueryString()->links('pagination::bootstrap-5') }}
+    </div>
+</div>
+
 </div>
 
 @endsection

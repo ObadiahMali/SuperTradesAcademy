@@ -5,14 +5,17 @@
   <title>Receipt - {{ $receipt->number ?? ($payment->receipt_number ?? 'N/A') }}</title>
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+   <!-- Favicon -->
+    <link rel="icon" href="{{ asset('favicon.ico') }}" type="image/x-icon">
+    <link rel="shortcut icon" href="{{ asset('images/logo2.jfif') }}"  type="image/x-icon">
+    <link rel="icon" href="{{ asset('images/logo2.jfif') }}"  sizes="32x32" type="image/png">
+    <link rel="icon" href=""{{ asset('images/logo2.jfif') }}"  sizes="16x16" type="image/png">
+    <link rel="apple-touch-icon" href="{{ asset('apple-touch-icon.png') }}" sizes="180x180">
+
+
+
   <style>
-    :root{
-      --primary:#0b6ef6;
-      --muted:#64748b;
-      --accent:#0b2540;
-      --border:#eef2f7;
-      font-family: 'Inter', system-ui, sans-serif;
-    }
+    :root{--primary:#0b6ef6;--muted:#64748b;--accent:#0b2540;--border:#eef2f7;font-family:'Inter',system-ui,sans-serif}
     html,body{margin:0;padding:0;background:#fff;color:var(--accent);font-size:13px;line-height:1.4}
     .container{max-width:760px;margin:18px auto;padding:18px;border:1px solid #f5f7fb;border-radius:8px}
     .header,.footer{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap}
@@ -39,7 +42,6 @@
     .contact{font-size:0.85rem;color:var(--muted);line-height:1.4}
     .verification{text-align:right;font-size:0.85rem;color:var(--muted)}
     .verification strong{display:block;color:var(--accent);font-weight:700;margin-top:4px}
-    .qr{width:80px;height:80px;border-radius:6px;border:1px solid var(--border);display:inline-block;overflow:hidden}
     @media print{.no-print{display:none!important}.container{border:none;padding:10px}}
     .actions{display:flex;gap:8px;justify-content:center;margin:18px 0}
     .btn{padding:8px 12px;border-radius:6px;border:1px solid #e6eef8;background:#fff;color:var(--accent);font-weight:700;text-decoration:none}
@@ -50,50 +52,55 @@
   <div class="container">
     @php
       use Carbon\Carbon;
+      use Illuminate\Support\Str;
 
-      // Brand / contact configuration (single place to change)
-      $brand = [
-        'name' => 'SuperTrades Academy',
-        'tagline' => 'Practical skills. Real trades. Lasting careers.',
-        'address' => 'Akamwesi Mall, Gayaza–Kampala Road, Kyebando',
-        'hours' => 'Mon, Tue & Sat • 9:30 AM – 1:00 PM',
-        'phone' => '+256 759 953041',
-        'email' => 'info@supertrades.ac'
+      // Brand fallback
+      $brand = $brand ?? [
+        'name'=>'SuperTrades Academy',
+        'tagline'=>'Practical skills. Real trades. Lasting careers.',
+        'address'=>'Akamwesi Mall, Gayaza–Kampala Road, Kyebando',
+        'hours'=>'Mon, Tue & Sat • 9:30 AM – 1:00 PM',
+        'phone'=>'+256750116866',
+        'email'=>'stapipsquad@gmail.com'
       ];
 
-      // Resolve plan from config (single source)
-      $planKey = $student->plan_key ?? 'physical_mentorship';
-      $plan = config("pricing.plans.$planKey") ?? ['label' => 'Unknown', 'price' => 0, 'currency' => 'UGX'];
+      // safe fallbacks for controller-provided vars
+      $payments = $payments ?? ($student->payments ?? collect());
+      $planLabel = $planLabel ?? ($plan['label'] ?? ($student->plan_key ?? 'Unknown'));
+      $originalDisplay = $originalDisplay ?? ('UGX ' . number_format($student->course_fee ?? 0, 2));
+      $totalPaidUGX = $totalPaidUGX ?? $payments->sum(fn($p)=> (float) ($p->amount_converted ?? 0));
+      $courseFeeUGX = $courseFeeUGX ?? ($student->course_fee ?? 0);
+      $dueUGX = $dueUGX ?? max(0, $courseFeeUGX - $totalPaidUGX);
+      $formatDate = fn($d)=> $d ? Carbon::parse($d)->format('d M Y H:i') : '—';
 
-      // Convert plan price to UGX if needed and centralize course fee logic
-      $convertedPlanPriceUGX = $plan['currency'] === 'USD'
-          ? app(\App\Services\ExchangeRateService::class)->usdToUgx($plan['price'])
-          : $plan['price'];
+      // phone normalization: do NOT force +256; only prepend if phone_country or defaultDial provided
+      function normalizePhoneForDisplay($phone, $countryIso = null, $defaultDial = null) {
+          if (empty($phone)) return null;
+          $phone = trim($phone);
+          if (str_starts_with($phone, '+')) return $phone;
+          $digits = preg_replace('/\D+/', '', $phone);
+          if (!$digits) return null;
+          if ($defaultDial && str_starts_with($defaultDial, '+')) return $defaultDial . $digits;
+          $isoToDial = ['UG'=>'+256','KE'=>'+254','TZ'=>'+255','US'=>'+1'];
+          if ($countryIso && isset($isoToDial[strtoupper($countryIso)])) return $isoToDial[strtoupper($countryIso)] . $digits;
+          return $digits;
+      }
 
-      // Use student->course_fee only if student currency is UGX (pre-converted), otherwise use converted plan price
-      $studentCurrency = strtoupper($student->currency ?? 'UGX');
-      $courseFeeUGX = $studentCurrency === 'UGX'
-          ? ($student->course_fee ?? $convertedPlanPriceUGX)
-          : $convertedPlanPriceUGX;
+      $phoneDisplay = $phoneDisplay ?? normalizePhoneForDisplay($student->phone ?? null, $student->phone_country ?? $student->country ?? null);
+      $phoneDisplay = $phoneDisplay ?? $brand['phone'];
 
-      // Totals computed once and re-used
-      $payments = $student->payments; // ensure relation is loaded by controller
-      $totalPaidUGX = $payments->sum('amount_converted');
-      $dueUGX = max(0, $courseFeeUGX - $totalPaidUGX);
+      // Received by and verification code fallbacks
+      $receivedBy = $receipt->received_by_name ?? ($payment->created_by_name ?? optional($payment->creator ?? null)->name ?? '—');
+      $verificationCode = $receipt->verification_code ?? ($payment->verification_hash ?? null);
 
-      // Helpers
-      $formatDate = fn($d) => $d ? Carbon::parse($d)->format('d M Y H:i') : '—';
       $receiptNumber = $receipt->number ?? ($payment->receipt_number ?? null);
       $issuedAt = $receipt->issued_at ?? ($payment->paid_at ?? now());
-      $qrPresent = isset($qrBase64) && $qrBase64;
     @endphp
 
     <!-- HEADER -->
     <div class="header">
       <div class="brand">
-        <div class="logo">
-          <img src="{{ asset('images/logo.png') }}" alt="{{ $brand['name'] }} logo">
-        </div>
+        <div class="logo"><img src="{{ asset('images/logo.png') }}" alt="{{ $brand['name'] }} logo"></div>
         <div class="brand-text">
           <div class="name">{{ $brand['name'] }}</div>
           <div class="tag">{{ $brand['tagline'] }}</div>
@@ -104,10 +111,9 @@
 
       <div class="meta">
         <div style="font-weight:700">Payment Receipt</div>
-        {{-- <div>Receipt: {{ $receiptNumber ?? 'N/A' }}</div> --}}
+        <div>Receipt: <strong>{{ $receiptNumber ?? 'N/A' }}</strong></div>
         <div>Date: {{ $formatDate($issuedAt) }}</div>
-        <div class="muted">Receipt for:  {{ $planLabel }} UGX {{ number_format($student->course_fee ?? 0, 0) }}</div>
-          {{-- <div><strong>Total Price (UGX):</strong> UGX {{ number_format($student->course_fee ?? 0, 0) }}</div> --}}
+        <div class="muted">Receipt for: {{ $planLabel }} • {{ $originalDisplay }}</div>
       </div>
     </div>
 
@@ -119,9 +125,9 @@
         <h4>Student</h4>
         <p><strong>{{ $student->first_name }} {{ $student->last_name }}</strong></p>
         <p>ID: {{ $student->id }}</p>
-       <p>Intake: {{ optional($student->intake)->name ?? '—' }}</p>
-        @if($student->email)<p>Email: {{ $student->email }}</p>@endif
-        @if($student->phone)<p>Phone: {{ $student->phone }}</p>@endif
+        <p>Intake: {{ optional($student->intake)->name ?? '—' }}</p>
+        @if(!empty($student->email))<p>Email: {{ $student->email }}</p>@endif
+        @if(!empty($phoneDisplay))<p><strong>Phone:</strong> {{ $phoneDisplay }}</p>@endif
         <p>Status: <span class="badge">{{ $student->status ?? '—' }}</span></p>
       </div>
 
@@ -132,11 +138,10 @@
             <div>
               <div class="muted">Plan</div>
               <div style="font-weight:700">{{ $planLabel }}</div>
-              {{-- <div class="muted" style="margin-top:6px">Original: {{ $plan['currency'] }} {{ number_format($plan['price'], 2) }}</div> --}}
             </div>
 
             <div style="min-width:160px;text-align:right">
-              <div class="muted">Course Fee </div>
+              <div class="muted">Course Fee</div>
               <div class="amount">Price: {{ $originalDisplay }}</div>
             </div>
           </div>
@@ -176,8 +181,8 @@
         @forelse($payments->sortByDesc('paid_at') as $p)
           <tr>
             <td>{{ $formatDate($p->paid_at ?? $p->created_at) }}</td>
-            <td>{{ ($p->currency ?? 'UGX') }} {{ number_format($p->amount, 2) }}</td>
-            <td>UGX {{ number_format($p->amount_converted ?? 0, 2) }}</td>
+            <td>{{ strtoupper($p->currency ?? 'UGX') }} {{ number_format((float) $p->amount, 2) }}</td>
+            <td>UGX {{ number_format((float) ($p->amount_converted ?? 0), 2) }}</td>
             <td class="muted">{{ $p->method ?? '—' }}</td>
             <td class="muted">{{ $p->reference ?? ($p->receipt_number ?? '—') }}</td>
           </tr>
@@ -185,7 +190,6 @@
           <tr><td colspan="5" class="muted text-right">No payments recorded</td></tr>
         @endforelse
 
-        {{-- Totals lines (use the computed variables) --}}
         <tr class="total-row">
           <td colspan="2" class="muted">Subtotal (Course Fee)</td>
           <td class="text-right">UGX {{ number_format($courseFeeUGX, 2) }}</td>
@@ -221,22 +225,16 @@
         {{ $brand['tagline'] }}
       </div>
 
-      <div class="verification">
-        <div>Received by: <strong>{{ $receipt->received_by_name ?? ($payment->created_by_name ?? '—') }}</strong></div>
-        <div style="margin-top:8px">Verification code: <strong>{{ $receipt->verification_code ?? ($payment->verification_hash ?? '—') }}</strong></div>
-
-        @if($qrPresent)
-          <div style="margin-top:10px">
-            <div class="qr"><img src="{{ $qrBase64 }}" alt="QR" style="width:100%;height:100%;object-fit:cover"></div>
-            <div class="muted" style="margin-top:6px">Scan to verify</div>
-          </div>
-        @endif
-      </div>
-    </div>
-
-    <div style="margin-top:14px;text-align:right">
+      {{-- <div class="verification">
+        <div>Received by: <strong>{{ $receivedBy }}</strong></div>
+        <div style="margin-top:8px">Verification code: <strong>{{ $verificationCode ?? '—' }}</strong></div>
+      </div> --}}
+      <div style="margin-top:14px;text-align:right">
       <img src="{{ asset('images/logo2.jfif') }}" alt="logo" style="width:64px;opacity:0.9;border-radius:6px">
     </div>
+    </div>
+
+    
   </div>
 
   <!-- ACTIONS (no-print) -->

@@ -209,24 +209,31 @@
         </div>
       </div>
     </div>
+<div class="expected-box">
+  @php
+    $expected = (float) ($expectedUGXAll ?? 0);
+    $collected = (float) ($totalCollectedUGXAll ?? $collectedUGXAll ?? 0);
+    $collectedPctAll = $expected > 0
+      ? round(min(100, max(0, ($collected / $expected) * 100)), 2)
+      : 0.00;
+  @endphp
 
-    <div class="expected-box">
   <div class="expected-label">Expected UGX</div>
-  <div class="expected-value">UGX {{ number_format($expectedUGX ?? 0, 2) }}</div>
+  <div class="expected-value">UGX {{ number_format($expected, 2) }}</div>
 
   <div class="expected-label mt-2">Outstanding</div>
   <div class="outstanding-value">
-    UGX {{ number_format( max(0, ($expectedUGX ?? 0) - ($collectedUGXAllTime ?? 0)), 2) }}
+    UGX {{ number_format(max(0, $expected - $collected), 2) }}
   </div>
 
   <div class="progress-small mt-2" role="progressbar" aria-hidden="false"
-       aria-valuenow="{{ $collectedPctAll ?? 0 }}" aria-valuemin="0" aria-valuemax="100">
-    <div class="bar" style="width: {{ $collectedPctAll ?? 0 }}%;"></div>
+       aria-valuenow="{{ $collectedPctAll }}" aria-valuemin="0" aria-valuemax="100">
+    <div class="bar" style="width: {{ $collectedPctAll }}%;"></div>
   </div>
 
   <div class="muted-note mt-1">
-    @if(!empty($expectedUGX) && $expectedUGX > 0)
-      {{ number_format($collectedPctAll ?? 0, 2) }}% collected of expected UGX · Collected: UGX {{ number_format($collectedUGXAllTime ?? 0, 2) }}
+    @if($expected > 0)
+      {{ number_format($collectedPctAll, 2) }}% collected of expected UGX · Collected: UGX {{ number_format($collected, 2) }}
     @else
       No expected target set
     @endif

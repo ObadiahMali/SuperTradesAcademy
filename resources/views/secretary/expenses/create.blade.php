@@ -83,12 +83,12 @@
       <div class="form-help mt-1">Choose the category that best fits this expense</div>
     </div>
 
-    <div class="mb-3">
+    {{-- <div class="mb-3">
       <label class="form-label label-inline">Reason / Description</label>
       <textarea name="description" class="form-control textarea-lg input-group-compact" placeholder="Explain why this expense was necessary, what it covers, and any additional context">{{ old('description') }}</textarea>
       @error('description') <div class="error">{{ $message }}</div> @enderror
       <div class="form-help mt-1">Use 1–3 short sentences. This helps approvals and future audits.</div>
-    </div>
+    </div> --}}
 
     <div class="field-row align-items-center mt-4">
       <div>

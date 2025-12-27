@@ -34,7 +34,7 @@ class ExchangeRateService
             }
 
             // fallback: 1 UGX ≈ 0.0002796 USD (approx). If you prefer use inverse (USD->UGX) adjust accordingly.
-            return 0.0002796;
+            return 0.0002739726;
         });
     }
 

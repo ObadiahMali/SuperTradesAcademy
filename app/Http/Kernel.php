@@ -61,9 +61,20 @@ class Kernel extends HttpKernel
         'signed' => \Illuminate\Routing\Middleware\ValidateSignature::class,
         'throttle' => \Illuminate\Routing\Middleware\ThrottleRequests::class,
         'verified' => \Illuminate\Auth\Middleware\EnsureEmailIsVerified::class,
+
+        // app/Http/Kernel.php (inside $middlewareAliases)
+        'admin' => \App\Http\Middleware\EnsureUserIsAdmin::class,
+
+
+        // If you later decide to use a custom is_admin middleware, register it here:
+        // 'is_admin' => \App\Http\Middleware\IsAdmin::class,
+
+        // Spatie permission middleware aliases (uncomment if spatie/laravel-permission is installed)
+        // 'role' => \Spatie\Permission\Middlewares\RoleMiddleware::class,
+        // 'permission' => \Spatie\Permission\Middlewares\PermissionMiddleware::class,
+        // 'role_or_permission' => \Spatie\Permission\Middlewares\RoleOrPermissionMiddleware::class,
     ];
-    protected $routeMiddleware = [
-    // existing middleware...
-    'is_admin' => \App\Http\Middleware\IsAdmin::class,
-];
+    // app/Http/Kernel.php
+
+
 }

@@ -4,16 +4,33 @@ namespace App\Http\Middleware;
 
 use Closure;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Gate;
+use Symfony\Component\HttpFoundation\Response;
 
 class IsAdmin
 {
-    public function handle(Request $request, Closure $next)
+    public function handle(Request $request, Closure $next): Response
     {
-        // Check if user is logged in and has is_admin flag
-        if (! $request->user() || ! $request->user()->is_admin) {
-            abort(403, 'Unauthorized');
+        $user = $request->user();
+
+        if (! $user) {
+            return $request->expectsJson()
+                ? abort(401,'Unauthenticated.')
+                : redirect()->guest(route('login'));
         }
 
-        return $next($request);
+        // Allow if user has administrator role
+        if ($user->hasRole('administrator')) {
+            return $next($request);
+        }
+
+        // Allow if Gate says they can manage users
+        if (Gate::check('manage-users')) {
+            return $next($request);
+        }
+
+        return $request->expectsJson()
+            ? abort(403,'This action is unauthorized.')
+            : abort(403,'This action is unauthorized.');
     }
 }

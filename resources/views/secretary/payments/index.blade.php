@@ -49,9 +49,12 @@
       <i class="bi bi-arrow-clockwise me-1"></i> Refresh
     </a>
 
-    <form action="{{ route('secretary.payments.index') }}" method="GET" class="d-flex align-items-center">
-      <input name="q" value="{{ request('q') }}" class="form-control form-control-sm search-input" placeholder="Search reference, student or amount" />
-    </form>
+   <form action="{{ route('secretary.payments.index') }}" method="GET" class="d-flex align-items-center gap-2">
+  <input name="q" value="{{ request('q') }}" class="form-control form-control-sm search-input" placeholder="Search reference, student or amount" autocomplete="off" />
+  <button type="submit" class="btn btn-outline-secondary btn-sm">Search</button>
+</form>
+
+
 
     <div class="dropdown">
       <button class="btn btn-outline-secondary btn-sm compact-btn dropdown-toggle" data-bs-toggle="dropdown">Filter</button>
@@ -152,37 +155,63 @@
               <div class="muted small">{{ $payment->status ?? '' }}</div>
             </td>
 
-            <td class="text-end">
-              <div class="actions-group" role="group" aria-label="Actions for payment {{ $payment->id }}">
-                @if(\Illuminate\Support\Facades\Route::has('secretary.payments.show'))
-                  <a href="{{ route('secretary.payments.show', $payment->id) }}" class="btn btn-sm btn-outline-secondary" title="Details">
-                    <i class="bi bi-eye me-1"></i> Details
-                  </a>
-              
-               
-                @endif
+<td class="text-end">
+ <div class="actions-group" role="group" aria-label="Actions for payment {{ $payment->id }}">
+    @if(\Illuminate\Support\Facades\Route::has('secretary.payments.show'))
+      <a href="{{ route('secretary.payments.show', $payment->id) }}" class="btn btn-sm btn-outline-secondary" title="Details">
+        <i class="bi bi-eye me-1"></i> Details
+      </a>
+    @endif
 
-                @if(\Illuminate\Support\Facades\Route::has('secretary.students.show') && optional($payment->student)->id)
-                  <a href="{{ route('secretary.students.show', $payment->student->id) }}" class="btn btn-sm btn-outline-primary" title="Student">
-                    <i class="bi bi-person-lines-fill me-1"></i> Student
-                  </a>
-                @else
-                  <button type="button" class="btn btn-sm btn-outline-primary" disabled title="Student unavailable">
-                    <i class="bi bi-person-lines-fill me-1"></i> Student
-                  </button>
-                @endif
+    {{-- Edit: visible only to administrators --}}
+    @if(\Illuminate\Support\Facades\Route::has('secretary.payments.edit') && auth()->check() && (method_exists(auth()->user(), 'hasRole') ? auth()->user()->hasRole('administrator') : (auth()->user()->role === 'administrator')))
+      <a href="{{ route('secretary.payments.edit', $payment->id) }}" class="btn btn-sm btn-outline-primary ms-1" title="Edit payment">
+        <i class="bi bi-pencil me-1"></i> Edit
+      </a>
+    @else
+      <button type="button" class="btn btn-sm btn-outline-primary ms-1" disabled title="Edit unavailable">
+        <i class="bi bi-pencil me-1"></i> Edit
+      </button>
+    @endif
 
-                @if(\Illuminate\Support\Facades\Route::has('secretary.payments.receipt'))
-                  <a href="{{ route('secretary.payments.receipt', $payment->id) }}" class="btn btn-sm btn-outline-success" title="Receipt">
-                    <i class="bi bi-receipt me-1"></i> Receipt
-                  </a>
-                @else
-                  <button type="button" class="btn btn-sm btn-outline-success" disabled title="Receipt unavailable">
-                    <i class="bi bi-receipt me-1"></i> Receipt
-                  </button>
-                @endif
-              </div>
-            </td>
+    @if(\Illuminate\Support\Facades\Route::has('secretary.students.show') && optional($payment->student)->id)
+      <a href="{{ route('secretary.students.show', $payment->student->id) }}" class="btn btn-sm btn-outline-primary" title="Student">
+        <i class="bi bi-person-lines-fill me-1"></i> Student
+      </a>
+    @else
+      <button type="button" class="btn btn-sm btn-outline-primary" disabled title="Student unavailable">
+        <i class="bi bi-person-lines-fill me-1"></i> Student
+      </button>
+    @endif
+
+    @if(\Illuminate\Support\Facades\Route::has('secretary.payments.receipt'))
+      <a href="{{ route('secretary.payments.receipt', $payment->id) }}" class="btn btn-sm btn-outline-success" title="Receipt">
+        <i class="bi bi-receipt me-1"></i> Receipt
+      </a>
+    @else
+      <button type="button" class="btn btn-sm btn-outline-success" disabled title="Receipt unavailable">
+        <i class="bi bi-receipt me-1"></i> Receipt
+      </button>
+    @endif
+
+    {{-- Delete button: visible only if route exists and user is authorized (admin) --}}
+    @if(\Illuminate\Support\Facades\Route::has('secretary.payments.destroy') && auth()->check() && (method_exists(auth()->user(), 'hasRole') ? auth()->user()->hasRole('administrator') : (auth()->user()->role === 'administrator')))
+      <form action="{{ route('secretary.payments.destroy', $payment->id) }}" method="POST" class="d-inline-block ms-1" onsubmit="return confirm('Are you sure you want to delete this payment?');">
+        @csrf
+        @method('DELETE')
+        <button type="submit" class="btn btn-sm btn-danger" title="Delete payment">
+          <i class="bi bi-trash me-1"></i> Delete
+        </button>
+      </form>
+    @else
+      <button type="button" class="btn btn-sm btn-danger ms-1" disabled title="Delete unavailable">
+        <i class="bi bi-trash me-1"></i> Delete
+      </button>
+    @endif
+</div>
+
+</td>
+
           </tr>
         @empty
           <tr>
@@ -195,7 +224,10 @@
 
   <div class="d-flex justify-content-between align-items-center mt-3">
     <div class="muted small">Showing page {{ $payments->currentPage() }} of {{ $payments->lastPage() }}</div>
-<div>{{ $payments->withQueryString()->links() }}</div>
+
+      <div class="mt-3">
+          {{ $payments->withQueryString()->links('pagination::bootstrap-5') }}
+      </div>             
    
   </div>
 </div>
