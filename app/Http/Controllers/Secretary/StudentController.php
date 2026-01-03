@@ -169,39 +169,38 @@ public function index(Request $request)
     $student = Student::create($data);
 
     if ($student->email) {
-        try {
-            // 1) Send verification email if token exists
-            if ($plainToken) {
-                Mail::to($student->email)
-                    ->send(new StudentEmailVerification($student, $plainToken));
-            }
+    try {
+        // Optionally generate a password reset link and include it in the welcome mail.
+        // If you do not want a reset link, remove the Password::createToken block and pass only $student.
+        $token = Password::createToken($student);
+        $resetUrl = url(route('password.reset', [
+            'token' => $token,
+            'email' => $student->email,
+        ], false));
 
-            // 2) Optionally generate a password reset link and include it in the welcome mail.
-            // If you do not want a reset link, remove the Password::createToken block and pass only $student.
-            $token = Password::createToken($student);
-            $resetUrl = url(route('password.reset', [
-                'token' => $token,
-                'email' => $student->email,
-            ], false));
+        // Send only the welcome email (no verification email)
+        Mail::to($student->email)
+            ->send(new WelcomeUserMail($student, $resetUrl));
 
-            Mail::to($student->email)
-                ->send(new WelcomeUserMail($student, $resetUrl));
+        Log::info('Welcome email sent to student', [
+            'student_id' => $student->id,
+            'email' => $student->email,
+        ]);
+    } catch (\Throwable $e) {
+        Log::error('Failed to send welcome email to student', [
+            'student_id' => $student->id,
+            'email' => $student->email,
+            'message' => $e->getMessage(),
+            'trace' => $e->getTraceAsString(),
+        ]);
 
-            Log::info('Student emails sent', ['student_id' => $student->id, 'email' => $student->email]);
-
-        } catch (\Throwable $e) {
-            Log::error('Failed to send student emails', [
-                'student_id' => $student->id,
-                'email' => $student->email,
-                'message' => $e->getMessage(),
-                'trace' => $e->getTraceAsString(),
-            ]);
-            // In local environment rethrow so you see the error during development
-            if (app()->environment('local')) {
-                throw $e;
-            }
+        // In local environment rethrow so you see the error during development
+        if (app()->environment('local')) {
+            throw $e;
         }
     }
+}
+
 
     return redirect()
         ->route('secretary.students.index')

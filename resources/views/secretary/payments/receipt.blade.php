@@ -249,11 +249,11 @@
           : null;
     @endphp
 
-    @if($pdfUrl)
+    {{-- @if($pdfUrl)
       <a class="btn primary" href="{{ $pdfUrl }}" target="_blank" rel="noopener">Download PDF</a>
     @else
       <button class="btn primary" onclick="alert('PDF not available')" aria-disabled="true">Download PDF</button>
-    @endif
+    @endif --}}
   </div>
 </body>
 </html>

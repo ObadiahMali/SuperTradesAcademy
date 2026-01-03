@@ -35,7 +35,7 @@
                 <div style="width:56px;height:56px;border-radius:6px;background:#fff;display:inline-block;"></div>
               @endif --}}
               <div style="flex:1;">
-                <a href="{{ url('/') }}" class="brand" style="color:inherit;text-decoration:none;">SuperTrades Academy</a>
+               <div> <a href="{{ url('/') }}" class="brand" style="color:inherit;text-decoration:none;">SuperTrades Academy</a></div>
                 <div style="font-size:12px;color:#e6f0ff;">Payment Receipt</div>
               </div>
               <div style="text-align:right;color:#e6f0ff;font-size:13px;">{{ $student->first_name ?? 'Student' }}</div>
