@@ -92,15 +92,25 @@
           </div>
 
           <div class="me-2 mb-2" style="min-width:0;">
-            <select name="plan" class="form-select form-select-sm report-filter-select">
-              <option value="">All plans</option>
-              @foreach(config('plans.plans') ?? [] as $key => $cfg)
-                <option value="{{ $key }}" {{ ($filters['plan'] ?? '') === $key ? 'selected' : '' }}>
-                  {{ $cfg['label'] ?? ucwords(str_replace('_',' ',$key)) }}
-                </option>
-              @endforeach
-            </select>
-          </div>
+  @php
+    // If controller already passed $plans, this does nothing; otherwise load from DB.
+    $plans = $plans ?? \App\Models\Plan::orderBy('label')->get();
+  @endphp
+
+  <select name="plan" class="form-select form-select-sm report-filter-select">
+    <option value="">All plans</option>
+    @foreach($plans as $plan)
+      @php
+        // prefer a 'key' column for stable lookup; fall back to id if missing
+        $value = $plan->key ?? $plan->id;
+        $label = $plan->label ?? (isset($plan->key) ? ucwords(str_replace('_',' ',$plan->key)) : ($plan->name ?? 'Plan'));
+      @endphp
+      <option value="{{ $value }}" {{ ($filters['plan'] ?? '') === (string) $value ? 'selected' : '' }}>
+        {{ $label }}
+      </option>
+    @endforeach
+  </select>
+</div>
 
           <div class="me-2 mb-2" style="min-width:0;">
             <select name="intake" class="form-select form-select-sm report-filter-select">

@@ -110,7 +110,7 @@ public function index(Request $request)
    /**
      * Store a newly created student in storage and send emails.
      */
-  public function store(Request $request)
+public function store(Request $request)
 {
     $data = $request->validate([
         'intake_id'            => 'required|exists:intakes,id',
@@ -120,7 +120,8 @@ public function index(Request $request)
         'phone_country'        => 'nullable|string|max:32',
         'phone_country_code'   => 'nullable|string|max:8',
         'phone_full'           => 'nullable|string|max:32',
-        'email'                => 'nullable|email|unique:students,email',
+        // allow duplicate emails by removing the unique rule
+        'email'                => 'nullable|email',
         'plan_key'             => 'required|string',
         'address_line1'        => 'nullable|string|max:255',
         'address_line2'        => 'nullable|string|max:255',
@@ -169,38 +170,37 @@ public function index(Request $request)
     $student = Student::create($data);
 
     if ($student->email) {
-    try {
-        // Optionally generate a password reset link and include it in the welcome mail.
-        // If you do not want a reset link, remove the Password::createToken block and pass only $student.
-        $token = Password::createToken($student);
-        $resetUrl = url(route('password.reset', [
-            'token' => $token,
-            'email' => $student->email,
-        ], false));
+        try {
+            // Optionally generate a password reset link and include it in the welcome mail.
+            // If you do not want a reset link, remove the Password::createToken block and pass only $student.
+            $token = Password::createToken($student);
+            $resetUrl = url(route('password.reset', [
+                'token' => $token,
+                'email' => $student->email,
+            ], false));
 
-        // Send only the welcome email (no verification email)
-        Mail::to($student->email)
-            ->send(new WelcomeUserMail($student, $resetUrl));
+            // Send only the welcome email (no verification email)
+            Mail::to($student->email)
+                ->send(new WelcomeUserMail($student, $resetUrl));
 
-        Log::info('Welcome email sent to student', [
-            'student_id' => $student->id,
-            'email' => $student->email,
-        ]);
-    } catch (\Throwable $e) {
-        Log::error('Failed to send welcome email to student', [
-            'student_id' => $student->id,
-            'email' => $student->email,
-            'message' => $e->getMessage(),
-            'trace' => $e->getTraceAsString(),
-        ]);
+            Log::info('Welcome email sent to student', [
+                'student_id' => $student->id,
+                'email' => $student->email,
+            ]);
+        } catch (\Throwable $e) {
+            Log::error('Failed to send welcome email to student', [
+                'student_id' => $student->id,
+                'email' => $student->email,
+                'message' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
+            ]);
 
-        // In local environment rethrow so you see the error during development
-        if (app()->environment('local')) {
-            throw $e;
+            // In local environment rethrow so you see the error during development
+            if (app()->environment('local')) {
+                throw $e;
+            }
         }
     }
-}
-
 
     return redirect()
         ->route('secretary.students.index')
@@ -211,44 +211,56 @@ public function index(Request $request)
     /**
      * Show a specific student.
      */
-    public function show(Student $student)
-    {
-        $exchange = app(ExchangeRateService::class);
-        $plansConfig = config('plans.plans') ?? [];
-        $plan = $plansConfig[$student->plan_key] ?? null;
+  public function show($id, \App\Services\ExchangeRateService $rates)
+{
+    $student = \App\Models\Student::with('intake')->findOrFail($id);
+    $payments = \App\Models\Payment::where('student_id', $student->id)->get();
 
-        $planPriceUGX = ($plan && strtoupper($plan['currency'] ?? 'UGX') === 'USD')
-            ? $exchange->usdToUgx($plan['price'])
-            : ($student->course_fee ?? 0);
+    // Resolve plan (DB source of truth)
+    $plan = \App\Models\Plan::where('key', $student->plan_key)->first();
 
-        $totalPaidUGX = $student->payments->sum(function ($p) use ($exchange) {
-            if (!is_null($p->amount_converted)) {
-                return (float) $p->amount_converted;
-            }
-
-            $pCurrency = strtoupper($p->currency ?? 'UGX');
-            if ($pCurrency === 'USD') {
-                return (float) $exchange->usdToUgx($p->amount);
-            }
-
-            return (float) $p->amount;
-        });
-
-        $phoneDisplay = $student->phone_full
-            ?? ($student->buildPhoneFull() ?: (!empty($student->phone) ? ('+' . ($student->phone_country_code ?? '256') . ' ' . $student->phone) : '—'));
-
-        return view('secretary.students.show', [
-            'student' => $student,
-            'payments' => $student->payments()->latest('paid_at')->get(),
-            'plan' => $plan,
-            'planLabel' => $plan['label'] ?? '—',
-            'planPriceUGX' => $planPriceUGX,
-            'totalPaidUGX' => $totalPaidUGX,
-            'balanceUGX' => max(0, $planPriceUGX - $totalPaidUGX),
-            'phoneDisplay' => $phoneDisplay,
-            'subtotalUGX' => $planPriceUGX,
-        ]);
+    // Original display (plan currency + amount) or fallback to student
+    if ($plan) {
+        $origCurrency = strtoupper($plan->currency ?? 'UGX');
+        $origPrice = (float) $plan->price;
+        $originalDisplay = $origCurrency === 'UGX'
+            ? "{$origCurrency} " . number_format($origPrice, 0)
+            : "{$origCurrency} " . number_format($origPrice, 2);
+    } else {
+        $originalDisplay = 'UGX ' . number_format((float) ($student->course_fee ?? 0), 0);
     }
+
+    // Determine effective plan price in UGX for totals and balance
+    $planPriceUGX = null;
+    if ($plan) {
+        if (strtoupper($plan->currency ?? 'UGX') === 'USD') {
+            $planPriceUGX = $rates->usdToUgx((float)$plan->price);
+        } else {
+            $planPriceUGX = (float)$plan->price;
+        }
+    } else {
+        // fallback: if student.course_fee is present and already UGX
+        $planPriceUGX = is_numeric($student->course_fee) ? (float)$student->course_fee : null;
+    }
+
+    // Compute total paid in UGX (prefer amount_converted)
+    $totalPaidUGX = 0.0;
+    foreach ($payments as $p) {
+        if (!is_null($p->amount_converted) && is_numeric($p->amount_converted) && (float)$p->amount_converted > 0) {
+            $totalPaidUGX += (float)$p->amount_converted;
+            continue;
+        }
+        $pc = strtoupper($p->currency ?? 'UGX');
+        $pa = (float) ($p->amount ?? 0);
+        $totalPaidUGX += $pc === 'USD' ? $rates->usdToUgx($pa) : $pa;
+    }
+
+    $balanceUGX = is_null($planPriceUGX) ? null : max(0.0, $planPriceUGX - $totalPaidUGX);
+
+    return view('secretary.students.show', compact(
+        'student','payments','originalDisplay','planPriceUGX','totalPaidUGX','balanceUGX'
+    ));
+}
 
     
 

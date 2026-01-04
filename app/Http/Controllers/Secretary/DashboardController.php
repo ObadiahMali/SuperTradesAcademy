@@ -10,6 +10,8 @@ use App\Models\Expense;
 use App\Services\ExchangeRateService;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 
 class DashboardController extends Controller
 {
@@ -59,8 +61,14 @@ class DashboardController extends Controller
          * Payments (build queries first, then get collections)
          * ----------------------------- */
         $paymentsBaseQuery = Payment::query();
+
+        // If payments table has intake_id use it, otherwise filter via student relation
         if ($intakeId) {
-            $paymentsBaseQuery->where('intake_id', $intakeId);
+            if (Schema::hasColumn('payments', 'intake_id')) {
+                $paymentsBaseQuery->where('intake_id', $intakeId);
+            } else {
+                $paymentsBaseQuery->whereHas('student', fn ($q) => $q->where('intake_id', $intakeId));
+            }
         }
 
         // Build the period query (do NOT call get() yet if we need to reuse the query)
@@ -106,16 +114,42 @@ class DashboardController extends Controller
         /** -----------------------------
          * Expenses
          * ----------------------------- */
-        $expensesThisMonth = Expense::when($intakeId, fn ($q) => $q->where('intake_id', $intakeId))
-            ->whereBetween('incurred_at', [$start, $end])
+        // Choose a date column that exists on expenses table
+        if (Schema::hasColumn('expenses', 'incurred_at')) {
+            $expenseDateColumn = 'incurred_at';
+        } elseif (Schema::hasColumn('expenses', 'expense_date')) {
+            $expenseDateColumn = 'expense_date';
+        } else {
+            $expenseDateColumn = 'created_at';
+        }
+
+        $expensesQuery = Expense::query();
+        if ($intakeId) {
+            if (Schema::hasColumn('expenses', 'intake_id')) {
+                $expensesQuery->where('intake_id', $intakeId);
+            } else {
+                // fallback: try to filter via relation to student if available
+                if (method_exists(Expense::class, 'student')) {
+                    $expensesQuery->whereHas('student', fn ($q) => $q->where('intake_id', $intakeId));
+                }
+            }
+        }
+
+        $expensesThisMonth = (float) $expensesQuery
+            ->whereBetween($expenseDateColumn, [$start, $end])
             ->sum('amount');
 
-        $expensesThisMonthCount = Expense::when($intakeId, fn ($q) => $q->where('intake_id', $intakeId))
-            ->whereBetween('incurred_at', [$start, $end])
+        $expensesThisMonthCount = (int) $expensesQuery
+            ->whereBetween($expenseDateColumn, [$start, $end])
             ->count();
 
-        $totalExpensesAll = Expense::when($intakeId, fn ($q) => $q->where('intake_id', $intakeId))
-            ->sum('amount');
+        $totalExpensesAll = (float) Expense::when($intakeId, function ($q) use ($intakeId) {
+                if (Schema::hasColumn('expenses', 'intake_id')) {
+                    $q->where('intake_id', $intakeId);
+                } elseif (method_exists(Expense::class, 'student')) {
+                    $q->whereHas('student', fn ($sq) => $sq->where('intake_id', $intakeId));
+                }
+            })->sum('amount');
 
         /** -----------------------------
          * KPIs
@@ -167,7 +201,7 @@ class DashboardController extends Controller
         });
 
         $activeIntake = $activeIntakes->first(); // null if none
-       $activeIntakeCount = Intake::where('active', true)->count();
+        $activeIntakeCount = Intake::where('active', true)->count();
 
         /** -----------------------------
          * Recent payments (use the query builder, not a collection)

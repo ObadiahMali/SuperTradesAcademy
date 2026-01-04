@@ -23,22 +23,105 @@
   </style>
 </head>
 <body>
+  @php
+    use Carbon\Carbon;
+
+    // Small helper to coerce numeric-like values to float
+    $toFloat = fn($v) => is_numeric($v) ? (float) $v : (float) preg_replace('/[^\d.-]/', '', (string) $v);
+
+    // Ensure $student exists
+    $student = $student ?? null;
+
+    // Normalize payments collection: prefer $payments, else build from single $payment, else empty collection
+    if (!isset($payments) || !($payments instanceof \Illuminate\Support\Collection)) {
+        if (isset($payment) && $payment) {
+            $payments = collect([$payment]);
+        } else {
+            $payments = $student && method_exists($student, 'payments') ? ($student->payments ?? collect()) : collect();
+        }
+    }
+
+    // If a single $payment variable exists but payments collection is present, prefer the collection for totals
+    if (!isset($payment) && $payments->count() > 0) {
+        $payment = $payments->sortByDesc('paid_at')->first();
+    }
+
+    // Resolve plan if not provided
+    if (!isset($plan) || !$plan) {
+        $plan = isset($student) ? \App\Models\Plan::where('key', $student->plan_key)->first() : null;
+    }
+
+    // Exchange rate service (may not be available in mail context)
+    $rates = app()->has(\App\Services\ExchangeRateService::class)
+        ? app(\App\Services\ExchangeRateService::class)
+        : null;
+
+    // Format helpers
+    $formatDate = fn($d) => $d ? Carbon::parse($d)->format('d M Y H:i') : '—';
+    $formatMoney = fn($v, $dec = 2) => number_format((float) $v, $dec);
+
+    // Compute authoritative plan price in UGX
+    // Priority:
+    // 1) If student.course_fee exists and looks like UGX (heuristic), use it.
+    // 2) If plan exists and is USD and we have rates, convert plan->price to UGX.
+    // 3) If plan exists and is UGX, use plan->price.
+    // 4) Fallback to numeric student.course_fee or 0.
+    $planPriceUGX = 0.0;
+    $studentCourseFee = isset($student->course_fee) ? $toFloat($student->course_fee) : null;
+
+    if (!empty($studentCourseFee) && $studentCourseFee > 1000) {
+        // Heuristic: values > 1000 are likely UGX already
+        $planPriceUGX = $studentCourseFee;
+    } elseif ($plan) {
+        $planCurrency = strtoupper($plan->currency ?? 'UGX');
+        $planPriceRaw = $toFloat($plan->price ?? 0);
+
+        if ($planCurrency === 'USD' && $rates) {
+            $planPriceUGX = (float) $rates->usdToUgx($planPriceRaw);
+        } elseif ($planCurrency === 'UGX') {
+            $planPriceUGX = $planPriceRaw;
+        } else {
+            // No rates available and student.course_fee not reliable: fallback to plan price (best-effort)
+            $planPriceUGX = $planPriceRaw;
+        }
+    } else {
+        $planPriceUGX = is_numeric($studentCourseFee) ? (float) $studentCourseFee : 0.0;
+    }
+
+    // Compute total paid in UGX: prefer amount_converted, otherwise convert USD payments if rates available
+    $totalPaidUGX = 0.0;
+    foreach ($payments as $p) {
+        if (!is_null($p->amount_converted) && is_numeric($p->amount_converted) && $toFloat($p->amount_converted) > 0) {
+            $totalPaidUGX += $toFloat($p->amount_converted);
+            continue;
+        }
+        $pCurrency = strtoupper($p->currency ?? 'UGX');
+        $pAmount = $toFloat($p->amount ?? 0);
+        if ($pCurrency === 'USD' && $rates) {
+            $totalPaidUGX += (float) $rates->usdToUgx($pAmount);
+        } else {
+            $totalPaidUGX += $pAmount;
+        }
+    }
+
+    // Outstanding / due in UGX (ensure non-negative)
+    $outstandingUgx = max(0.0, $planPriceUGX - $totalPaidUGX);
+
+    // Receipt metadata
+    $receiptNumber = ($payments->first()->receipt_number ?? null) ?? ($receipt->number ?? null);
+    $issuedAt = ($payments->first()->paid_at ?? null) ?? ($receipt->issued_at ?? now());
+  @endphp
+
   <table width="100%" cellpadding="0" cellspacing="0" role="presentation">
     <tr>
       <td align="center" style="padding:20px;">
         <table class="container" width="100%" cellpadding="0" cellspacing="0" role="presentation">
           <tr>
             <td class="header">
-              {{-- @if(!empty($logoCid))
-                <img src="{{ asset('images/logo.png') }}" alt="SuperTrades Academy" class="logo">
-              @else
-                <div style="width:56px;height:56px;border-radius:6px;background:#fff;display:inline-block;"></div>
-              @endif --}}
               <div style="flex:1;">
                <div> <a href="{{ url('/') }}" class="brand" style="color:inherit;text-decoration:none;">SuperTrades Academy</a></div>
-                <div style="font-size:12px;color:#e6f0ff;">Payment Receipt</div>
+                <div style="font-size:12px;color:#e6f0ff;">Payment Verification</div>
               </div>
-              <div style="text-align:right;color:#e6f0ff;font-size:13px;">{{ $student->first_name ?? 'Student' }}</div>
             </td>
           </tr>
 
@@ -49,17 +132,21 @@
               <p>Thank you — we have recorded your payment. Below are the details:</p>
 
               <div class="details">
-                <div><span class="strong">Receipt</span>: {{ $payment->receipt_number ?? 'N/A' }}</div>
-                <div><span class="strong">Date</span>: {{ optional($payment->paid_at)->toDayDateTimeString() ?? now()->toDayDateTimeString() }}</div>
+                <div><span class="strong">Receipt</span>: {{ $payment->receipt_number ?? $receiptNumber ?? 'N/A' }}</div>
+                <div><span class="strong">Date</span>: {{ $formatDate($payment->paid_at ?? $issuedAt) }}</div>
                 <div><span class="strong">Amount</span>: {{ number_format((float) ($payment->amount ?? 0), 2) }} {{ $payment->currency ?? 'UGX' }}</div>
+
                 @if(!empty($payment->amount_converted))
                   <div><span class="strong">Amount (UGX)</span>: {{ number_format((float) $payment->amount_converted, 2) }} UGX</div>
+                @elseif(isset($payment) && strtoupper($payment->currency ?? 'UGX') === 'USD' && $rates)
+                  <div><span class="strong">Amount (UGX)</span>: {{ number_format((float) $rates->usdToUgx((float)$payment->amount), 2) }} UGX</div>
                 @endif
+
                 <div><span class="strong">Method</span>: {{ $payment->method ?? 'N/A' }}</div>
-                <div><span class="strong">Notes</span>: {{ $payment->notes ?? '—' }}</div>
+                {{-- <div><span class="strong">Notes</span>: {{ $payment->notes ?? '—' }}</div> --}}
               </div>
 
-              <p class="muted">Outstanding balance: <strong>{{ number_format((float) ($outstandingUgx ?? 0), 2) }} UGX</strong></p>
+              {{-- <p class="muted">Outstanding balance: <strong>UGX {{ number_format((float) $outstandingUgx, 0) }}</strong></p> --}}
 
               @if(!empty($resetUrl))
                 <p style="margin:18px 0 8px 0;">To set your password, click the button below:</p>
@@ -79,7 +166,6 @@
           <tr>
             <td class="footer">
               <div style="margin-bottom:8px;">
-                {{-- <a href="https://facebook.com" style="margin:0 6px; color:#666; text-decoration:none;">Facebook</a> | --}}
                 <a href="https://tiktok.com/@supertrade_sacademy?_r=1&_t=ZM-928R8YyzoYS" style="margin:0 6px; color:#666; text-decoration:none;">Tiktok</a> |
                 <a href="https://www.instagram.com/supertrades_academy?igsh=ZnN2cGY4eDA2MjRn&utm_source=qr" style="margin:0 6px; color:#666; text-decoration:none;">Instagram</a>
               </div>

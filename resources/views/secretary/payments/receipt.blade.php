@@ -9,10 +9,8 @@
     <link rel="icon" href="{{ asset('favicon.ico') }}" type="image/x-icon">
     <link rel="shortcut icon" href="{{ asset('images/logo2.jfif') }}"  type="image/x-icon">
     <link rel="icon" href="{{ asset('images/logo2.jfif') }}"  sizes="32x32" type="image/png">
-    <link rel="icon" href=""{{ asset('images/logo2.jfif') }}"  sizes="16x16" type="image/png">
+    <link rel="icon" href="{{ asset('images/logo2.jfif') }}"  sizes="16x16" type="image/png">
     <link rel="apple-touch-icon" href="{{ asset('apple-touch-icon.png') }}" sizes="180x180">
-
-
 
   <style>
     :root{--primary:#0b6ef6;--muted:#64748b;--accent:#0b2540;--border:#eef2f7;font-family:'Inter',system-ui,sans-serif}
@@ -64,13 +62,61 @@
         'email'=>'stapipsquad@gmail.com'
       ];
 
-      // safe fallbacks for controller-provided vars
+      // Ensure payments collection exists
       $payments = $payments ?? ($student->payments ?? collect());
-      $planLabel = $planLabel ?? ($plan['label'] ?? ($student->plan_key ?? 'Unknown'));
-      $originalDisplay = $originalDisplay ?? ('UGX ' . number_format($student->course_fee ?? 0, 2));
-      $totalPaidUGX = $totalPaidUGX ?? $payments->sum(fn($p)=> (float) ($p->amount_converted ?? 0));
-      $courseFeeUGX = $courseFeeUGX ?? ($student->course_fee ?? 0);
-      $dueUGX = $dueUGX ?? max(0, $courseFeeUGX - $totalPaidUGX);
+
+      // Resolve plan if not provided
+      if (!isset($plan) || !$plan) {
+          $plan = \App\Models\Plan::where('key', $student->plan_key)->first();
+      }
+
+      // Plan label
+      $planLabel = $planLabel ?? ($plan->label ?? $student->plan_key ?? 'Unknown');
+
+      // Original display (prefer controller-provided $originalDisplay)
+      if (!isset($originalDisplay)) {
+          if ($plan) {
+              $pc = strtoupper($plan->currency ?? 'UGX');
+              $pp = (float) ($plan->price ?? 0);
+              $originalDisplay = $pc === 'UGX' ? "{$pc} " . number_format($pp, 0) : "{$pc} " . number_format($pp, 2);
+          } else {
+              $originalDisplay = 'UGX ' . number_format($student->course_fee ?? 0, 2);
+          }
+      }
+
+    
+
+      // Exchange rate helper
+      $rates = app(\App\Services\ExchangeRateService::class);
+
+      // Compute planPriceUGX (authoritative subtotal in UGX)
+      if (!isset($planPriceUGX)) {
+          if ($plan) {
+              $pc = strtoupper($plan->currency ?? 'UGX');
+              $pp = (float) ($plan->price ?? 0);
+              $planPriceUGX = $pc === 'USD' ? (float) $rates->usdToUgx($pp) : (float) $pp;
+          } else {
+              $planPriceUGX = is_numeric($student->course_fee) ? (float) $student->course_fee : 0.0;
+          }
+      }
+
+      // Compute totalPaidUGX (prefer amount_converted)
+      if (!isset($totalPaidUGX)) {
+          $totalPaidUGX = 0.0;
+          foreach ($payments as $p) {
+              if (!is_null($p->amount_converted) && is_numeric($p->amount_converted) && (float)$p->amount_converted > 0) {
+                  $totalPaidUGX += (float) $p->amount_converted;
+                  continue;
+              }
+              $pc = strtoupper($p->currency ?? 'UGX');
+              $pa = (float) ($p->amount ?? 0);
+              $totalPaidUGX += $pc === 'USD' ? (float) $rates->usdToUgx($pa) : $pa;
+          }
+      }
+
+      // Balance / due in UGX
+      $dueUGX = $dueUGX ?? max(0.0, $planPriceUGX - $totalPaidUGX);
+
       $formatDate = fn($d)=> $d ? Carbon::parse($d)->format('d M Y H:i') : '—';
 
       // phone normalization: do NOT force +256; only prepend if phone_country or defaultDial provided
@@ -89,10 +135,7 @@
       $phoneDisplay = $phoneDisplay ?? normalizePhoneForDisplay($student->phone ?? null, $student->phone_country ?? $student->country ?? null);
       $phoneDisplay = $phoneDisplay ?? $brand['phone'];
 
-      // Received by and verification code fallbacks
-      $receivedBy = $receipt->received_by_name ?? ($payment->created_by_name ?? optional($payment->creator ?? null)->name ?? '—');
-      $verificationCode = $receipt->verification_code ?? ($payment->verification_hash ?? null);
-
+      // Receipt metadata fallbacks
       $receiptNumber = $receipt->number ?? ($payment->receipt_number ?? null);
       $issuedAt = $receipt->issued_at ?? ($payment->paid_at ?? now());
     @endphp
@@ -113,7 +156,18 @@
         <div style="font-weight:700">Payment Receipt</div>
         <div>Receipt: <strong>{{ $receiptNumber ?? 'N/A' }}</strong></div>
         <div>Date: {{ $formatDate($issuedAt) }}</div>
-        <div class="muted">Receipt for: {{ $planLabel }} • {{ $originalDisplay }}</div>
+        <div class="muted">Receipt for: {{ $planLabel }} •  @php
+      // prefer plan display, fallback to student.course_fee
+      if (isset($plan) && $plan) {
+          $pc = strtoupper($plan->currency ?? 'UGX');
+          $pp = (float) ($plan->price ?? 0);
+          $orig = $pc === 'UGX' ? "{$pc} " . number_format($pp, 0) : "{$pc} " . number_format($pp, 2);
+      } else {
+          $orig = 'UGX ' . number_format($student->course_fee ?? 0, 2);
+      }
+    @endphp
+
+     {{ $orig }}</div>
       </div>
     </div>
 
@@ -140,10 +194,33 @@
               <div style="font-weight:700">{{ $planLabel }}</div>
             </div>
 
-            <div style="min-width:160px;text-align:right">
-              <div class="muted">Course Fee</div>
-              <div class="amount">Price: {{ $originalDisplay }}</div>
-            </div>
+           <div style="min-width:160px;text-align:right">
+  <div class="muted">Course Fee</div>
+
+  {{-- Show original currency/amount (from plan if available, otherwise student) --}}
+  <div class="amount">
+    @php
+      // prefer plan display, fallback to student.course_fee
+      if (isset($plan) && $plan) {
+          $pc = strtoupper($plan->currency ?? 'UGX');
+          $pp = (float) ($plan->price ?? 0);
+          $orig = $pc === 'UGX' ? "{$pc} " . number_format($pp, 0) : "{$pc} " . number_format($pp, 2);
+      } else {
+          $orig = 'UGX ' . number_format($student->course_fee ?? 0, 2);
+      }
+    @endphp
+
+    Price: {{ $orig }}
+
+    {{-- show UGX equivalent when plan is USD --}}
+    {{-- @if(isset($plan) && strtoupper($plan->currency ?? 'UGX') === 'USD')
+      @php
+        $planPriceUGX = $planPriceUGX ?? (float) app(\App\Services\ExchangeRateService::class)->usdToUgx((float)$plan->price);
+      @endphp
+      — UGX {{ number_format($planPriceUGX, 0) }}
+    @endif --}}
+  </div>
+</div>
           </div>
 
           <hr style="margin:10px 0">
@@ -182,7 +259,7 @@
           <tr>
             <td>{{ $formatDate($p->paid_at ?? $p->created_at) }}</td>
             <td>{{ strtoupper($p->currency ?? 'UGX') }} {{ number_format((float) $p->amount, 2) }}</td>
-            <td>UGX {{ number_format((float) ($p->amount_converted ?? 0), 2) }}</td>
+            <td>UGX {{ number_format((float) ($p->amount_converted ?? ($p->currency === 'USD' ? $rates->usdToUgx((float)$p->amount) : $p->amount)), 2) }}</td>
             <td class="muted">{{ $p->method ?? '—' }}</td>
             <td class="muted">{{ $p->reference ?? ($p->receipt_number ?? '—') }}</td>
           </tr>
@@ -192,7 +269,7 @@
 
         <tr class="total-row">
           <td colspan="2" class="muted">Subtotal (Course Fee)</td>
-          <td class="text-right">UGX {{ number_format($courseFeeUGX, 2) }}</td>
+          <td class="text-right">UGX {{ number_format($planPriceUGX, 2) }}</td>
           <td colspan="2"></td>
         </tr>
 
@@ -225,16 +302,11 @@
         {{ $brand['tagline'] }}
       </div>
 
-      {{-- <div class="verification">
-        <div>Received by: <strong>{{ $receivedBy }}</strong></div>
-        <div style="margin-top:8px">Verification code: <strong>{{ $verificationCode ?? '—' }}</strong></div>
-      </div> --}}
       <div style="margin-top:14px;text-align:right">
-      <img src="{{ asset('images/logo2.jfif') }}" alt="logo" style="width:64px;opacity:0.9;border-radius:6px">
-    </div>
+        <img src="{{ asset('images/logo2.jfif') }}" alt="logo" style="width:64px;opacity:0.9;border-radius:6px">
+      </div>
     </div>
 
-    
   </div>
 
   <!-- ACTIONS (no-print) -->

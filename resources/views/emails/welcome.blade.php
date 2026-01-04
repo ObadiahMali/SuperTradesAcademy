@@ -5,6 +5,87 @@
     <title>Welcome to SuperTrades Academy</title>
 </head>
 <body style="font-family: Arial, sans-serif; background-color:#f9f9f9; padding:20px;">
+    @php
+        use Carbon\Carbon;
+
+        // Ensure $student exists
+        $student = $student ?? null;
+
+        // Resolve plan if not provided
+        if (!isset($plan) || !$plan) {
+            $plan = $student ? \App\Models\Plan::where('key', $student->plan_key)->first() : null;
+        }
+
+        // Exchange rate service (optional)
+        $rates = app()->has(\App\Services\ExchangeRateService::class)
+            ? app(\App\Services\ExchangeRateService::class)
+            : null;
+
+        // Compute originalDisplay (prefer plan, fallback to student.course_fee)
+        if (!isset($originalDisplay)) {
+            if ($plan) {
+                $pc = strtoupper($plan->currency ?? 'UGX');
+                $pp = (float) ($plan->price ?? 0);
+                $originalDisplay = $pc === 'UGX'
+                    ? "{$pc} " . number_format($pp, 0)
+                    : "{$pc} " . number_format($pp, 2);
+            } else {
+                $originalDisplay = 'UGX ' . number_format($student->course_fee ?? 0, 2);
+            }
+        }
+
+        // Compute plan price in UGX for display and calculations
+        if (!isset($planPriceUGX)) {
+            if ($plan) {
+                $pc = strtoupper($plan->currency ?? 'UGX');
+                $pp = (float) ($plan->price ?? 0);
+                if ($pc === 'USD' && $rates) {
+                    $planPriceUGX = (float) $rates->usdToUgx($pp);
+                } elseif ($pc === 'USD' && !$rates) {
+                    // Defensive fallback: treat stored price as UGX if no rate service
+                    $planPriceUGX = $pp;
+                } else {
+                    $planPriceUGX = (float) $pp;
+                }
+            } else {
+                $planPriceUGX = is_numeric($student->course_fee ?? null) ? (float) $student->course_fee : 0.0;
+            }
+        }
+
+        // Determine payments collection and compute totalPaidUGX
+        $payments = $payments ?? ($student && method_exists($student, 'payments') ? $student->payments : collect());
+        if (!isset($totalPaidUGX)) {
+            $totalPaidUGX = 0.0;
+            if ($payments instanceof \Illuminate\Support\Collection) {
+                foreach ($payments as $p) {
+                    if (!is_null($p->amount_converted) && is_numeric($p->amount_converted) && (float)$p->amount_converted > 0) {
+                        $totalPaidUGX += (float) $p->amount_converted;
+                        continue;
+                    }
+                    $pCurrency = strtoupper($p->currency ?? 'UGX');
+                    $pAmount = (float) ($p->amount ?? 0);
+                    if ($pCurrency === 'USD' && $rates) {
+                        $totalPaidUGX += (float) $rates->usdToUgx($pAmount);
+                    } else {
+                        $totalPaidUGX += $pAmount;
+                    }
+                }
+            }
+        }
+
+        // Outstanding balance in UGX
+        $outstandingUgx = $outstandingUgx ?? max(0.0, $planPriceUGX - $totalPaidUGX);
+
+        // Phone display fallback
+        $phoneDisplay = $phoneDisplay ?? ($student->phone_display ?? null);
+
+        // Reset URL fallback (if provided by controller)
+        $resetUrl = $resetUrl ?? null;
+
+        // Format helpers
+        $formatMoney = fn($v, $dec = 2) => number_format((float) $v, $dec);
+    @endphp
+
     <table width="100%" cellpadding="0" cellspacing="0" style="max-width:600px; margin:auto; background:#fff; border-radius:8px; overflow:hidden;">
         <tr>
             <td style="background:#007bff; color:#fff; padding:20px; text-align:center;">
@@ -19,12 +100,22 @@
 
                 <p>Your enrollment details:</p>
                 <ul>
-                    <li>Intake: {{ $student->intake->name ?? 'N/A' }}</li>
-                    <li>Plan: {{ $student->plan_key ?? 'N/A' }}</li>
+                    <li>Intake: {{ optional($student->intake)->name ?? 'N/A' }}</li>
+                    <li>Plan: {{ $plan->label ?? $student->plan_key ?? 'N/A' }}</li>
                     <li>Email: {{ $student->email ?? 'N/A' }}</li>
-                    <li>Phone: {{ $student->phone_display ?? 'N/A' }}</li>
-                    {{-- <li>Price: {{ $originalDisplay }} </li> --}}
+                    <li>Phone: {{ $phoneDisplay ?? 'N/A' }}</li>
+                    <li>
+                        <div style="margin-top:6px;">
+                            @php
+                                // Prefer plan original display; fallback already computed in $originalDisplay
+                                $orig = $originalDisplay;
+                            @endphp
 
+                            <strong>Price:</strong> {{ $orig }}
+
+                          
+                        </div>
+                    </li>
                 </ul>
 
                 @if(!empty($resetUrl))

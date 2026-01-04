@@ -39,10 +39,7 @@ class User extends Authenticatable
     /**
      * Convenience: is administrator.
      */
-    public function isAdmin(): bool
-    {
-        return $this->hasRole('administrator');
-    }
+  
 
     /**
      * Compatibility: assign a role name.
